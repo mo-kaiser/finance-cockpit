@@ -1,0 +1,67 @@
+import { createServerClient } from '@supabase/ssr';
+import { redirect, type Handle } from '@sveltejs/kit';
+import { sequence } from '@sveltejs/kit/hooks';
+import { PUBLIC_SUPABASE_PUBLISHABLE_KEY, PUBLIC_SUPABASE_URL } from '$env/static/public';
+import type { AuthClaims } from './app';
+
+/** Seiten, die ohne Login erreichbar sind. */
+const PUBLIC_PATHS = ['/login'];
+/** Seiten, die mit Login, aber noch ohne zweiten Faktor erreichbar sind. */
+const AAL1_PATHS = ['/mfa', '/logout'];
+
+const supabase: Handle = async ({ event, resolve }) => {
+	event.locals.supabase = createServerClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_PUBLISHABLE_KEY, {
+		cookies: {
+			getAll: () => event.cookies.getAll(),
+			setAll: (cookiesToSet) => {
+				for (const { name, value, options } of cookiesToSet) {
+					event.cookies.set(name, value, { ...options, path: '/' });
+				}
+			}
+		}
+	});
+
+	let cached: Promise<AuthClaims | null> | undefined;
+	event.locals.getClaims = () => {
+		cached ??= event.locals.supabase.auth.getClaims().then(({ data, error }) => {
+			if (error || !data?.claims?.sub) return null;
+			const c = data.claims as Record<string, unknown>;
+			return {
+				sub: String(c.sub),
+				email: typeof c.email === 'string' ? c.email : undefined,
+				aal: c.aal === 'aal2' ? 'aal2' : 'aal1'
+			};
+		});
+		return cached;
+	};
+
+	return resolve(event, {
+		filterSerializedResponseHeaders: (name) => name === 'content-range' || name === 'x-supabase-api-version'
+	});
+};
+
+const guard: Handle = async ({ event, resolve }) => {
+	const path = event.url.pathname;
+	const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));
+
+	if (!isPublic) {
+		const claims = await event.locals.getClaims();
+		if (!claims) redirect(303, '/login');
+		const aal1Ok = AAL1_PATHS.some((p) => path.startsWith(p));
+		if (claims.aal !== 'aal2' && !aal1Ok) redirect(303, '/mfa');
+	}
+
+	return resolve(event);
+};
+
+const headers: Handle = async ({ event, resolve }) => {
+	const response = await resolve(event);
+	response.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
+	response.headers.set('X-Frame-Options', 'DENY');
+	response.headers.set('X-Content-Type-Options', 'nosniff');
+	response.headers.set('Referrer-Policy', 'no-referrer');
+	response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+	return response;
+};
+
+export const handle = sequence(supabase, guard, headers);
