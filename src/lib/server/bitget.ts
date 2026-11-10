@@ -49,3 +49,14 @@ export async function bitgetGet<T = unknown>(path: string, params: Record<string
 	}
 	return body.data as T;
 }
+
+/** Öffentlicher (unsignierter) GET-Aufruf, z. B. für Marktkurse. */
+export async function bitgetPublic<T = unknown>(path: string, params: Record<string, string | number> = {}): Promise<T> {
+	const query = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString();
+	const res = await fetch(BASE + path + (query ? `?${query}` : ''));
+	const body = (await res.json().catch(() => null)) as { code?: string; msg?: string; data?: T } | null;
+	if (!res.ok || !body || body.code !== '00000') {
+		throw new BitgetError(body?.msg ?? `HTTP ${res.status}`, res.status, body?.code);
+	}
+	return body.data as T;
+}

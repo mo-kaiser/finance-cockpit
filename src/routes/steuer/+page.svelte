@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Decimal from 'decimal.js';
 	import { invalidate } from '$app/navigation';
+	import { clearLedgerCache } from '$lib/data/ledger';
 	import { computeTax, type DisposalStatus, type WarningKind } from '$lib/tax/engine';
 	import { FxTable } from '$lib/tax/fx';
 	import { download, kapCsv, soCsv } from '$lib/tax/csv';
@@ -24,6 +25,7 @@
 			const body = await res.json().catch(() => ({}));
 			if (!res.ok) throw new Error(body.message ?? `HTTP ${res.status}`);
 			fxMsg = `${body.count} Kurse geladen (${body.first} bis ${body.last}).`;
+			clearLedgerCache();
 			await invalidate('app:steuer');
 		} catch (e) {
 			fxMsg = `Fehler: ${(e as Error).message}`;

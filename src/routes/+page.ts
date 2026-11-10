@@ -1,28 +1,25 @@
+import { loadLedger } from '$lib/data/ledger';
+import type { LiveData } from '$lib/analysis/portfolio';
 import type { PageLoad } from './$types';
 
-export interface OverviewRow {
-	venue: string;
-	exchange: string;
-	year: number;
-	type: string;
-	n: number;
-	first_ts: string;
-	last_ts: string;
-}
+export const ssr = false;
 
-export const load: PageLoad = async ({ parent }) => {
+export const load: PageLoad = async ({ parent, fetch, depends }) => {
+	depends('app:live');
 	const { supabase } = await parent();
-	const [overview, imports] = await Promise.all([
-		supabase.from('v_ct_overview').select('*').limit(5000),
-		supabase
-			.from('imports')
-			.select('id, source, file_name, row_count, status, created_at, finished_at')
-			.order('created_at', { ascending: false })
-			.limit(20)
+
+	const [ledger, live] = await Promise.allSettled([
+		loadLedger(supabase),
+		fetch('/api/bitget/live').then(async (r) => {
+			if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message ?? `HTTP ${r.status}`);
+			return (await r.json()) as LiveData;
+		})
 	]);
+
 	return {
-		overview: (overview.data ?? []) as OverviewRow[],
-		imports: imports.data ?? [],
-		loadError: overview.error?.message ?? imports.error?.message ?? null
+		ledger: ledger.status === 'fulfilled' ? ledger.value : null,
+		ledgerError: ledger.status === 'rejected' ? String((ledger.reason as Error).message) : null,
+		live: live.status === 'fulfilled' ? live.value : null,
+		liveError: live.status === 'rejected' ? String((live.reason as Error).message) : null
 	};
 };
