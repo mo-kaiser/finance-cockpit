@@ -58,6 +58,28 @@ describe('mapApiLedger (Formate aus der Bitget-Inventur 11/2026)', () => {
 		expect([e!.buy_amount, e!.buy_cur, e!.sell_amount, e!.sell_cur, e!.fee_amount, e!.fee_cur]).toEqual(['0.0012', 'BTC', '100', 'USDT', '0.0000012', 'BTC']);
 	});
 
+	it('echter Spot-Verkauf vom 10.11.2026 (groupType transaction, BUY/SELL je Seite)', () => {
+		const [e] = mapApiLedger([
+			row({ tx_id: '1504041705644924932', business_type: 'SELL', group_type: 'transaction', coin: 'BTC', size: '-0.00011900', fees: '0.00000000', biz_order_id: '1504041705566617602' }),
+			row({ tx_id: '1504041705644924931', business_type: 'BUY', group_type: 'transaction', coin: 'USDT', size: '8.78746575', fees: '-0.00878746', biz_order_id: '1504041705566617602' })
+		]);
+		expect(classify(e!)).toBe('spot_trade');
+		expect([e!.sell_amount, e!.sell_cur, e!.buy_amount, e!.buy_cur, e!.fee_amount, e!.fee_cur]).toEqual(['0.000119', 'BTC', '8.78746575', 'USDT', '0.00878746', 'USDT']);
+	});
+
+	it('echter Futures-Trade vom 10.11.2026 (open_short / close_short)', () => {
+		const f = { endpoint: 'futures_bills_usdt', coin: 'USDT' };
+		const out = mapApiLedger([
+			row({ ...f, tx_id: '1504031764328910850', business_type: 'open_short', size: '0', fees: '-0.8147328' }),
+			row({ ...f, tx_id: '1504032311173877770', business_type: 'close_short', size: '0.54032079', fees: '-0.70749054' })
+		]);
+		expect(out.map((e) => [classify(e), e.buy_amount ?? `-${e.sell_amount}`])).toEqual([
+			['kap_fee', '-0.8147328'],
+			['kap_pnl', '0.54032079'],
+			['kap_fee', '-0.70749054']
+		]);
+	});
+
 	it('Futures: Schließen ergibt Ergebnis und Gebühr getrennt, Funding separat', () => {
 		const f = { endpoint: 'futures_bills_usdt' };
 		const out = mapApiLedger([

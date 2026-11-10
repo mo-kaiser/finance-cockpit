@@ -85,7 +85,8 @@ function mapSpot(rows: ApiLedgerRow[]): LedgerEntry[] {
 		const gt = (r.group_type ?? '').toLowerCase();
 
 		if (INCOME_SPOT[bt]) out.push(income(r, INCOME_SPOT[bt]!));
-		else if (gt === 'trade') {
+		// Spot-Trades: groupType „transaction“ (BUY = eingehende, SELL = ausgehende Seite), laut Doku auch „trade“
+		else if (gt === 'transaction' || gt === 'trade') {
 			const k = r.biz_order_id ?? r.tx_id;
 			trades.set(k, [...(trades.get(k) ?? []), r]);
 		} else if (gt === 'deposit') out.push(move(r, 'Bitget Spot', 'Deposit'));
