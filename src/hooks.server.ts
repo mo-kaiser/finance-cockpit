@@ -5,7 +5,7 @@ import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from '$lib/supabase-config';
 import type { AuthClaims } from './app';
 
 /** Seiten, die ohne Login erreichbar sind. */
-const PUBLIC_PATHS = ['/login'];
+const PUBLIC_PATHS = ['/login', '/api/cron/']; // Cron prüft selbst den CRON_SECRET
 /** Seiten, die mit Login, aber noch ohne zweiten Faktor erreichbar sind. */
 const AAL1_PATHS = ['/mfa', '/logout'];
 

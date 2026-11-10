@@ -1,6 +1,7 @@
 import { env } from '$env/dynamic/private';
 import { bitgetGet, BitgetError } from '$lib/server/bitget';
 import { supabaseAdmin } from '$lib/server/supabase-admin';
+import { ENDPOINTS } from '$lib/server/bitget-sync';
 import type { Actions, PageServerLoad } from './$types';
 
 const VARS = ['BITGET_API_KEY', 'BITGET_API_SECRET', 'BITGET_API_PASSPHRASE', 'SUPABASE_SECRET_KEY', 'CRON_SECRET'] as const;
@@ -17,7 +18,11 @@ export const load: PageServerLoad = async () => {
 			quoted: /^["'].*["']$/.test(v)
 		};
 	});
-	return { vars, vercelEnv: env.VERCEL_ENV ?? 'lokal' };
+	return {
+		vars,
+		vercelEnv: env.VERCEL_ENV ?? 'lokal',
+		endpoints: ENDPOINTS.map((e) => ({ key: e.key, label: e.label, windowDays: e.windowDays }))
+	};
 };
 
 interface AccountInfo {
