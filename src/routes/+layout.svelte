@@ -16,7 +16,8 @@
 	const nav = [
 		{ href: '/', label: 'Übersicht' },
 		{ href: '/steuer', label: 'Steuer' },
-		{ href: '/import', label: 'Import' }
+		{ href: '/import', label: 'Import' },
+		{ href: '/system', label: 'System' }
 	];
 	const showNav = $derived(data.claims?.aal === 'aal2');
 </script>

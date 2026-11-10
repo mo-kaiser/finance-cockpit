@@ -156,16 +156,17 @@ export function ledgerFromCt(rows: CtRow[]): LedgerEntry[] {
 
 const path = process.env.CT_CSV;
 describe.runIf(path && existsSync(path))('echter Export', () => {
-	const { rows } = parseCoinTrackingCsv(readFileSync(path!, 'utf8'));
-	const ledger = ledgerFromCt(rows);
+	let cached: LedgerEntry[] | undefined;
+	const getLedger = () => (cached ??= ledgerFromCt(parseCoinTrackingCsv(readFileSync(path!, 'utf8')).rows));
 
 	it('jede Bitget-Buchung hat eine bekannte Kategorie', () => {
-		const unknown = ledger.filter((e) => classify(e) === 'unknown');
+		const unknown = getLedger().filter((e) => classify(e) === 'unknown');
 		expect(unknown.map((e) => `${e.exchange}/${e.type}/${e.comment}`)).toEqual([]);
 	});
 
 	it('rechnet 2026 durch (fester Kurs 1,25 für den Abgleich)', () => {
 		const t0 = performance.now();
+		const ledger = getLedger();
 		const r = computeTax(ledger, fx, 2026);
 		const ms = Math.round(performance.now() - t0);
 		const f = (d: Decimal) => d.toFixed(2);
