@@ -51,7 +51,7 @@
 		e.preventDefault();
 		busy = true;
 		error = '';
-		const { error: err } = await data.supabase.auth.mfa.challengeAndVerify({ factorId, code: code.trim() });
+		const { error: err } = await data.supabase.auth.mfa.challengeAndVerify({ factorId, code: code.replace(/\D/g, '') });
 		busy = false;
 		if (err) {
 			error = `Code ungültig: ${err.message}`;
@@ -85,8 +85,6 @@
 				id="code"
 				inputmode="numeric"
 				autocomplete="one-time-code"
-				pattern="[0-9]{6}"
-				maxlength="6"
 				bind:value={code}
 				required
 			/>
