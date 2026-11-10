@@ -45,12 +45,51 @@
 	let syncLog = $state<string[]>([]);
 	let syncing = $state(false);
 
+	interface InvGroup {
+		endpoint: string;
+		group: string | null;
+		kind: string;
+		n: number;
+		afterCt: number;
+		first: string;
+		last: string;
+		sample: unknown;
+	}
+	let inventory = $state<{ total: number; ctEnd: string | null; groups: InvGroup[] } | null>(null);
+	let invError = $state('');
+	let invBusy = $state(false);
+
+	async function loadInventory() {
+		invBusy = true;
+		invError = '';
+		const res = await fetch('/api/bitget/inventory');
+		const body = await res.json().catch(() => ({}));
+		if (res.ok) inventory = body;
+		else invError = body.message ?? `HTTP ${res.status}`;
+		invBusy = false;
+	}
+
+	/** Kompakte Textfassung zum Kopieren in den Chat (ohne Adressen). */
+	const inventoryText = $derived.by(() => {
+		if (!inventory) return '';
+		const strip = (o: unknown) => {
+			if (!o || typeof o !== 'object') return o;
+			const c = { ...(o as Record<string, unknown>) };
+			for (const k of ['toAddress', 'fromAddress', 'tradeId', 'tag']) if (k in c) c[k] = '…';
+			return c;
+		};
+		return inventory.groups
+			.map((g) => `${g.endpoint} | ${g.group ?? ''} | ${g.kind} | n=${g.n} | nach CT=${g.afterCt} | ${g.first.slice(0, 10)}–${g.last.slice(0, 10)}\n  ${JSON.stringify(strip(g.sample))}`)
+			.join('\n');
+	});
+
 	async function syncAll() {
 		syncing = true;
 		syncLog = [];
-		const startMs = new Date(`${syncFrom}T00:00:00Z`).getTime();
 		const endMs = Date.now();
 		for (const ep of data.endpoints) {
+			// jede Schnittstelle nur so weit zurück, wie Bitget sie liefert
+			const startMs = Math.max(new Date(`${syncFrom}T00:00:00Z`).getTime(), endMs - ep.maxDays * 86_400_000 + 60_000);
 			let received = 0;
 			let stored = 0;
 			let err = '';
@@ -70,7 +109,8 @@
 				received += body.received;
 				stored += body.stored;
 			}
-			syncLog = [...syncLog, `${ep.label}: ${received} abgerufen, ${stored} neu gespeichert${err ? ` – abgebrochen bei ${err}` : ''}`];
+			const from = new Date(startMs).toISOString().slice(0, 10);
+			syncLog = [...syncLog, `${ep.label} (ab ${from}): ${received} abgerufen, ${stored} neu gespeichert${err ? ` – abgebrochen bei ${err}` : ''}`];
 		}
 		syncing = false;
 	}
@@ -197,7 +237,47 @@
 	{#each syncLog as l, i (i)}<p class="small">{l}</p>{/each}
 </div>
 
+<div class="card" style="margin-top:16px">
+	<h2 style="margin-top:0">Buchungsarten in den Bitget-Daten</h2>
+	<p class="muted small">Gruppiert die gespeicherten Rohdaten nach Buchungsart, mit Anzahl und einem Beispiel.</p>
+	<p><button onclick={loadInventory} disabled={invBusy}>{invBusy ? 'Lade …' : 'Inventur anzeigen'}</button></p>
+	{#if invError}<p class="error">{invError}</p>{/if}
+	{#if inventory}
+		<p class="small">
+			{inventory.total.toLocaleString('de-DE')} Datensätze · CoinTracking-Export endet {inventory.ctEnd?.slice(0, 16) ?? '–'}
+		</p>
+		<div class="table-wrap">
+			<table>
+				<thead><tr><th>Schnittstelle</th><th>Gruppe</th><th>Art</th><th class="num">Anzahl</th><th class="num">nach CT-Export</th><th>Zeitraum</th></tr></thead>
+				<tbody>
+					{#each inventory.groups as g (g.endpoint + g.group + g.kind)}
+						<tr>
+							<td>{g.endpoint}</td>
+							<td>{g.group ?? ''}</td>
+							<td><code>{g.kind}</code></td>
+							<td class="num">{g.n.toLocaleString('de-DE')}</td>
+							<td class="num">{g.afterCt.toLocaleString('de-DE')}</td>
+							<td class="small">{g.first.slice(0, 10)} – {g.last.slice(0, 10)}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		<p class="small muted">Zum Kopieren in den Chat (Adressen ausgeblendet):</p>
+		<textarea readonly rows="12" onfocus={(e) => e.currentTarget.select()}>{inventoryText}</textarea>
+	{/if}
+</div>
+
 <style>
+	textarea {
+		width: 100%;
+		font: 0.8rem/1.4 var(--mono);
+		background: var(--bg);
+		color: var(--text);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		padding: 10px;
+	}
 	pre {
 		background: var(--bg);
 		border: 1px solid var(--border);

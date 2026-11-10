@@ -1,6 +1,6 @@
 import { error, json } from '@sveltejs/kit';
 import { BitgetError } from '$lib/server/bitget';
-import { endpointByKey, fetchWindow, storeRecords } from '$lib/server/bitget-sync';
+import { earliestStart, endpointByKey, fetchWindow, storeRecords } from '$lib/server/bitget-sync';
 import { supabaseAdmin } from '$lib/server/supabase-admin';
 import type { RequestHandler } from './$types';
 
@@ -11,9 +11,11 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	const claims = await locals.getClaims();
 	if (claims?.aal !== 'aal2') error(401, 'Nicht angemeldet');
 
-	const { key, start, end } = (await request.json()) as { key: string; start: number; end: number };
-	const ep = endpointByKey(key);
+	const body = (await request.json()) as { key: string; start: number; end: number };
+	const ep = endpointByKey(body.key);
 	if (!ep) error(400, 'Unbekannte Schnittstelle');
+	const end = body.end;
+	const start = Math.max(body.start, earliestStart(ep));
 	if (!(end > start) || end - start > ep.windowDays * 86_400_000 + 1000) error(400, 'Ungültiges Zeitfenster');
 
 	try {

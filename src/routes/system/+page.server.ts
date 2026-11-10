@@ -21,7 +21,7 @@ export const load: PageServerLoad = async () => {
 	return {
 		vars,
 		vercelEnv: env.VERCEL_ENV ?? 'lokal',
-		endpoints: ENDPOINTS.map((e) => ({ key: e.key, label: e.label, windowDays: e.windowDays }))
+		endpoints: ENDPOINTS.map((e) => ({ key: e.key, label: e.label, windowDays: e.windowDays, maxDays: e.maxDays, role: e.role }))
 	};
 };
 

@@ -13,6 +13,10 @@ export interface EndpointDef {
 	limit: number;
 	/** Maximale Fensterbreite pro Anfrage in Tagen (Bitget begrenzt start/endTime). */
 	windowDays: number;
+	/** Wie weit die Schnittstelle zurückreicht (Tage), laut Reichweiten-Prüfung 11/2026. */
+	maxDays: number;
+	/** Grundlage für die Steuerberechnung (gleiche IDs wie CoinTracking) oder nur Zusatzinfo. */
+	role: 'ledger' | 'detail';
 	/** Liste aus der Antwort ziehen. */
 	list: (data: unknown) => Item[];
 	/** Cursor für die nächste (ältere) Seite. */
@@ -37,6 +41,8 @@ export const ENDPOINTS: EndpointDef[] = [
 		params: {},
 		limit: 500,
 		windowDays: 30,
+		maxDays: 89,
+		role: 'ledger',
 		list: arr,
 		nextCursor: (_d, items) => lastId(items, 'billId'),
 		idField: 'billId',
@@ -49,6 +55,8 @@ export const ENDPOINTS: EndpointDef[] = [
 		params: { productType: 'USDT-FUTURES' },
 		limit: 100,
 		windowDays: 30,
+		maxDays: 89,
+		role: 'ledger',
 		list: (d) => arr(field(d, 'bills')),
 		nextCursor: (d, items) => (field(d, 'endId') as string | undefined) ?? lastId(items, 'billId'),
 		idField: 'billId',
@@ -61,20 +69,10 @@ export const ENDPOINTS: EndpointDef[] = [
 		params: { productType: 'USDT-FUTURES' },
 		limit: 100,
 		windowDays: 7,
+		maxDays: 365,
+		role: 'detail',
 		list: (d) => arr(field(d, 'fillList')),
 		nextCursor: (d, items) => (field(d, 'endId') as string | undefined) ?? lastId(items, 'tradeId'),
-		idField: 'tradeId',
-		timeField: 'cTime'
-	},
-	{
-		key: 'spot_fills',
-		label: 'Spot-Fills',
-		path: '/api/v2/spot/trade/fills',
-		params: {},
-		limit: 100,
-		windowDays: 30,
-		list: arr,
-		nextCursor: (_d, items) => lastId(items, 'tradeId'),
 		idField: 'tradeId',
 		timeField: 'cTime'
 	},
@@ -85,6 +83,8 @@ export const ENDPOINTS: EndpointDef[] = [
 		params: {},
 		limit: 100,
 		windowDays: 30,
+		maxDays: 365,
+		role: 'detail',
 		list: arr,
 		nextCursor: (_d, items) => lastId(items, 'orderId'),
 		idField: 'orderId',
@@ -97,6 +97,8 @@ export const ENDPOINTS: EndpointDef[] = [
 		params: {},
 		limit: 100,
 		windowDays: 30,
+		maxDays: 365,
+		role: 'detail',
 		list: arr,
 		nextCursor: (_d, items) => lastId(items, 'orderId'),
 		idField: 'orderId',
@@ -127,6 +129,9 @@ export async function fetchWindow(ep: EndpointDef, start: number, end: number, m
 	}
 	return out;
 }
+
+/** Frühester sinnvoller Startzeitpunkt für eine Schnittstelle. */
+export const earliestStart = (ep: EndpointDef, now = Date.now()) => now - ep.maxDays * DAY;
 
 /** Zerlegt einen Zeitraum in Fenster, die Bitget akzeptiert (neueste zuerst). */
 export function windows(ep: EndpointDef, start: number, end: number) {
