@@ -1,0 +1,12 @@
+node_modules
+/.svelte-kit
+/build
+/.vercel
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Finanzdaten gehören nie ins Repo
+*.csv
+*.xlsx
