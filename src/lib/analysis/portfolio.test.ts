@@ -25,6 +25,22 @@ describe('buildPortfolio', () => {
 		expect(btc.byAccount.earn.toString()).toBe('0.0008');
 	});
 
+	it('Earn-Gesamtübersicht ersetzt Savings, On-Chain-Earn wird ergänzt und über Bitgets USDT-Wert bewertet', () => {
+		const p = buildPortfolio(
+			{
+				...live,
+				earnAccount: { ok: true, data: [{ coin: 'BTC', qty: '0.0008' }, { coin: 'ETH', qty: '0.5' }] },
+				elite: { ok: true, data: [{ coin: 'BGETH', qty: '2', valueUsdt: '6400', underlying: 'ETH', underlyingQty: '2', apr: '3' }] },
+				tickers: { ok: true, data: { BTC: '80000', ETH: '3000', USDT: '1' } }
+			},
+			eur,
+			[],
+			all
+		);
+		const by = Object.fromEntries(p.rows.map((r) => [r.coin, r.valueUsdt?.toString()]));
+		expect(by).toMatchObject({ BTC: '80', ETH: '1500', BGETH: '6400' });
+	});
+
 	it('Kontofilter', () => {
 		const p = buildPortfolio(live, eur, [], new Set(['futures'] as const));
 		expect(p.rows.map((r) => r.coin)).toEqual(['USDT']);

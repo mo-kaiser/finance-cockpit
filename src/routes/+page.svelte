@@ -108,6 +108,8 @@
 						['Spot', data.live.spot],
 						['Earn flexibel', data.live.earnFlex],
 						['Earn fest', data.live.earnFixed],
+						['Earn-Konto', data.live.earnAccount ?? { ok: true as const, data: [] }],
+						['On-Chain-Earn', data.live.elite ?? { ok: true as const, data: [] }],
 						['Futures-Konto', data.live.futures],
 						['Positionen', data.live.positions],
 						['Kurse', data.live.tickers]
