@@ -22,7 +22,10 @@ src/routes/login       Anmeldung
 src/routes/mfa         TOTP einrichten / prüfen
 src/routes/import      CoinTracking-CSV-Import (Parsing im Browser, Batches à 1000)
 src/routes/+page       Übersicht
+src/routes/steuer      Steuer-Ansicht (Berechnung im Browser, CSV-Export)
+src/routes/api/fx      EZB-Kursabruf (EUR/USD) → fx_rates
 src/lib/import         Parser + Tests
+src/lib/tax            Klassifizierung, EZB-Kurse, Steuer-Engine (KAP, FIFO/SO, Earn-Vorschau) + Tests
 ```
 
 ## Lokal
