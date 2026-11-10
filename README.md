@@ -27,7 +27,7 @@ src/lib/import         Parser + Tests
 
 ## Lokal
 ```
-cp .env.example .env   # Publishable Key eintragen
+cp .env.example .env   # nur für geheime Werte (Cron/Bitget)
 npm install
 npm run dev
 npm run check && npm test

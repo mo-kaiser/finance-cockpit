@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { redirect, type Handle } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
-import { PUBLIC_SUPABASE_PUBLISHABLE_KEY, PUBLIC_SUPABASE_URL } from '$env/static/public';
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from '$lib/supabase-config';
 import type { AuthClaims } from './app';
 
 /** Seiten, die ohne Login erreichbar sind. */
@@ -10,7 +10,7 @@ const PUBLIC_PATHS = ['/login'];
 const AAL1_PATHS = ['/mfa', '/logout'];
 
 const supabase: Handle = async ({ event, resolve }) => {
-	event.locals.supabase = createServerClient(PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_PUBLISHABLE_KEY, {
+	event.locals.supabase = createServerClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
 		cookies: {
 			getAll: () => event.cookies.getAll(),
 			setAll: (cookiesToSet) => {
