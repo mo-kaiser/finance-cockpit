@@ -14,7 +14,7 @@
 		const { error: err } = await data.supabase.auth.signInWithPassword({ email, password });
 		busy = false;
 		if (err) {
-			error = 'Anmeldung fehlgeschlagen.';
+			error = `Anmeldung fehlgeschlagen: ${err.message}${err.code ? ` (${err.code})` : ''}`;
 			return;
 		}
 		await invalidateAll();

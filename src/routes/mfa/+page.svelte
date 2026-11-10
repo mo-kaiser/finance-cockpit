@@ -54,7 +54,7 @@
 		const { error: err } = await data.supabase.auth.mfa.challengeAndVerify({ factorId, code: code.trim() });
 		busy = false;
 		if (err) {
-			error = 'Code ungültig. Bitte erneut versuchen.';
+			error = `Code ungültig: ${err.message}`;
 			code = '';
 			return;
 		}
