@@ -32,7 +32,8 @@ export const actions: Actions = {
 		try {
 			const info = await bitgetGet<AccountInfo>('/api/v2/spot/account/info');
 			const authorities = info.authorities ?? [];
-			const risky = authorities.filter((a) => !/read|readonly/i.test(a));
+			// Bitget-Kürzel: Endung r = lesen (z. B. coor, taxr); alles andere ist ein Schreib-/Handelsrecht
+			const risky = authorities.filter((a) => !/(r|read|readonly)$/i.test(a));
 			return { bitget: { ok: true, authorities, risky, ips: info.ips ?? '' } };
 		} catch (e) {
 			const err = e as BitgetError;
@@ -41,11 +42,14 @@ export const actions: Actions = {
 	},
 	supabase: async () => {
 		try {
-			const { count, error } = await supabaseAdmin().from('imports').select('id', { count: 'exact', head: true });
-			if (error) throw new Error(error.message);
-			return { supabase: { ok: true, imports: count ?? 0 } };
+			const { data, error, status } = await supabaseAdmin().from('imports').select('id').limit(100);
+			if (error) {
+				const detail = [error.message, error.code && `Code ${error.code}`, error.hint, `HTTP ${status}`].filter(Boolean).join(' · ');
+				throw new Error(detail);
+			}
+			return { supabase: { ok: true, imports: data.length } };
 		} catch (e) {
-			return { supabase: { ok: false, error: (e as Error).message } };
+			return { supabase: { ok: false, error: (e as Error).message || 'Unbekannter Fehler ohne Meldung' } };
 		}
 	}
 };
