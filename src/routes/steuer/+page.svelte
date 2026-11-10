@@ -108,6 +108,10 @@
 		{:else}
 			<strong>Noch keine EZB-Kurse geladen.</strong> Ohne Kurse lassen sich USDT-Beträge nicht in Euro umrechnen.
 		{/if}
+		<div class="muted small">
+			Datenquellen: CoinTracking {data.sources.cointracking.toLocaleString('de-DE')} · Bitget-API {data.sources.api.toLocaleString('de-DE')}
+			{#if data.sources.apiLast}(bis {new Date(data.sources.apiLast).toLocaleString('de-DE', { timeZone: 'Europe/Berlin' })}){/if}
+		</div>
 		{#if fxMsg}<div class={fxMsg.startsWith('Fehler') ? 'error' : 'muted'}>{fxMsg}</div>{/if}
 	</div>
 	<button onclick={refreshFx} disabled={fxBusy}>{fxBusy ? 'Lade …' : 'EZB-Kurse aktualisieren'}</button>
