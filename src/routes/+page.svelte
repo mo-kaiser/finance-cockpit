@@ -1,100 +1,242 @@
 <script lang="ts">
+	import Decimal from 'decimal.js';
+	import { invalidate } from '$app/navigation';
+	import { futuresEvents, futuresStats, inRange } from '$lib/analysis/futures';
+	import { buildPortfolio, type Account } from '$lib/analysis/portfolio';
+	import { money, pct, qty, tone } from '$lib/format';
+	import { computeTax } from '$lib/tax/engine';
+	import { FxTable } from '$lib/tax/fx';
+
 	let { data } = $props();
 
-	const fmtDate = (iso: string | null) =>
-		iso ? new Date(iso).toLocaleString('de-DE', { timeZone: 'Europe/Berlin' }) : '–';
+	// Bisher ein Broker; die Auswahl ist für weitere vorbereitet
+	const brokers = ['Bitget'];
+	let broker = $state('Bitget');
 
-	// Börse × Jahr, Zeilen summiert über alle Typen
-	const byVenueYear = $derived.by(() => {
-		const years = [...new Set(data.overview.map((r) => r.year))].sort();
-		const venues = new Map<string, Map<number, number>>();
-		for (const r of data.overview) {
-			const v = venues.get(r.exchange) ?? new Map<number, number>();
-			v.set(r.year, (v.get(r.year) ?? 0) + r.n);
-			venues.set(r.exchange, v);
-		}
-		return { years, rows: [...venues.entries()].sort(([a], [b]) => a.localeCompare(b)) };
+	const ACCOUNTS: { key: Account | 'all'; label: string }[] = [
+		{ key: 'all', label: 'Alle Konten' },
+		{ key: 'spot', label: 'Spot' },
+		{ key: 'earn', label: 'Earn' },
+		{ key: 'futures', label: 'Futures' }
+	];
+	let account = $state<Account | 'all'>('all');
+	let hideDust = $state(true);
+	let refreshing = $state(false);
+
+	const fx = $derived(new FxTable(data.ledger?.fx ?? []));
+	const eurPerUsdt = $derived.by(() => {
+		const r = fx.last ? fx.rateFor(fx.last) : null;
+		return r ? new Decimal(1).div(r.rate) : null;
 	});
 
-	const current = $derived(
-		data.overview
-			.filter((r) => r.venue === 'bitget' && r.year === 2026)
-			.sort((a, b) => b.n - a.n)
+	// Einstand aus der FIFO-Rechnung über die gesamte Historie
+	const tax = $derived(data.ledger && fx.size ? computeTax(data.ledger.ledger, fx, 'all') : null);
+
+	const portfolio = $derived(
+		data.live
+			? buildPortfolio(
+					data.live,
+					eurPerUsdt,
+					tax?.holdingsEnd ?? [],
+					new Set(account === 'all' ? (['spot', 'earn', 'futures'] as Account[]) : [account])
+				)
+			: null
 	);
+	const rows = $derived(portfolio ? portfolio.rows.filter((r) => !hideDust || (r.valueUsdt?.gte(1) ?? true)) : []);
+	const hidden = $derived(portfolio ? portfolio.rows.length - rows.length : 0);
+
+	const unrealized = $derived.by(() => {
+		if (!portfolio) return null;
+		let sum = new Decimal(0);
+		let covered = new Decimal(0);
+		for (const r of portfolio.rows) {
+			if (r.unrealizedEur && r.coin !== 'USDT') {
+				sum = sum.add(r.unrealizedEur);
+				covered = covered.add(r.valueUsdt ?? 0);
+			}
+		}
+		return { sum, covered };
+	});
+
+	const positions = $derived(data.live?.positions.ok ? data.live.positions.data : []);
+	const posUnrealized = $derived(positions.reduce((s, p) => s.add(p.unrealizedPL || 0), new Decimal(0)));
+
+	// Futures-Ergebnis laufender Monat und laufendes Jahr
+	const fut = $derived.by(() => {
+		if (!data.ledger) return null;
+		const ev = futuresEvents(data.ledger.ledger, fx);
+		const now = new Date().toISOString().slice(0, 10);
+		return {
+			month: futuresStats(inRange(ev, now.slice(0, 7) + '-01', now), 'USDT'),
+			year: futuresStats(inRange(ev, now.slice(0, 4) + '-01-01', now), 'USDT')
+		};
+	});
+
+	const errors = $derived(
+		data.live
+			? (
+					[
+						['Spot', data.live.spot],
+						['Earn flexibel', data.live.earnFlex],
+						['Earn fest', data.live.earnFixed],
+						['Futures-Konto', data.live.futures],
+						['Positionen', data.live.positions],
+						['Kurse', data.live.tickers]
+					] as const
+				).flatMap(([label, s]) => (s.ok ? [] : [`${label}: ${s.error}`]))
+			: []
+	);
+
+	async function refresh() {
+		refreshing = true;
+		await invalidate('app:live');
+		refreshing = false;
+	}
+
+	const D = (s: string) => new Decimal(s || 0);
 </script>
 
-<h1>Übersicht</h1>
-
-{#if data.loadError}
-	<p class="error">{data.loadError}</p>
-{/if}
-
-{#if !data.overview.length}
-	<div class="card">
-		<p>Noch keine Daten. <a href="/import">CoinTracking-Export importieren</a></p>
+<div class="page-head">
+	<h1>Dashboard</h1>
+	<div class="toolbar">
+		<select bind:value={broker} aria-label="Broker">
+			{#each brokers as b (b)}<option>{b}</option>{/each}
+		</select>
+		<div class="seg" role="group" aria-label="Konto">
+			{#each ACCOUNTS as a (a.key)}
+				<button aria-pressed={account === a.key} onclick={() => (account = a.key)}>{a.label}</button>
+			{/each}
+		</div>
+		<button class="ghost" onclick={refresh} disabled={refreshing}>{refreshing ? 'Lade …' : 'Aktualisieren'}</button>
 	</div>
-{:else}
-	<div class="card">
-		<h2 style="margin-top:0">Buchungen je Konto und Jahr</h2>
+</div>
+
+{#if data.liveError}<p class="error">Bitget nicht erreichbar: {data.liveError}</p>{/if}
+{#if data.ledgerError}<p class="error">{data.ledgerError}</p>{/if}
+{#each errors as e (e)}<p class="error small">{e}</p>{/each}
+
+{#if portfolio}
+	<div class="kpis">
+		<div class="kpi">
+			<div class="label">Gesamtwert {account === 'all' ? '' : `· ${ACCOUNTS.find((a) => a.key === account)?.label}`}</div>
+			<div class="value">{money(portfolio.totalEur, 'EUR')}</div>
+			<div class="sub">{money(portfolio.totalUsdt, 'USDT')}</div>
+		</div>
+		<div class="kpi">
+			<div class="label">Unrealisiert (Coins)</div>
+			<div class="value {tone(unrealized?.sum)}">{money(unrealized?.sum ?? null, 'EUR', { sign: true })}</div>
+			<div class="sub">für {money(unrealized?.covered ?? null, 'USDT', { digits: 0 })} mit bekanntem Einstand</div>
+		</div>
+		<div class="kpi">
+			<div class="label">Offene Positionen</div>
+			<div class="value {tone(posUnrealized)}">{money(posUnrealized, 'USDT', { sign: true })}</div>
+			<div class="sub">{positions.length} {positions.length === 1 ? 'Position' : 'Positionen'}</div>
+		</div>
+		{#if fut}
+			<div class="kpi">
+				<div class="label">Futures netto · Monat / Jahr</div>
+				<div class="value {tone(fut.month.total.net)}">{money(fut.month.total.net, 'USDT', { sign: true })}</div>
+				<div class="sub {tone(fut.year.total.net)}">Jahr {money(fut.year.total.net, 'USDT', { sign: true })} · {fut.year.total.trades} Trades</div>
+			</div>
+		{/if}
+	</div>
+
+	<section class="card" style="margin-top:16px">
+		<div class="head-row">
+			<div class="card-title">Bestände</div>
+			<label class="check"><input type="checkbox" bind:checked={hideDust} /> Kleinstbeträge unter 1 USDT ausblenden{hidden ? ` (${hidden})` : ''}</label>
+		</div>
 		<div class="table-wrap">
 			<table>
 				<thead>
 					<tr>
-						<th>Konto</th>
-						{#each byVenueYear.years as y (y)}<th class="num">{y}</th>{/each}
+						<th>Coin</th>
+						<th class="num">Menge</th>
+						{#if account === 'all'}<th class="num">Spot</th><th class="num">Earn</th><th class="num">Futures</th>{/if}
+						<th class="num">Kurs (USDT)</th>
+						<th class="num">Wert (EUR)</th>
+						<th class="num">Anteil</th>
+						<th class="num">Einstand (EUR)</th>
+						<th class="num">Unrealisiert</th>
 					</tr>
 				</thead>
 				<tbody>
-					{#each byVenueYear.rows as [exchange, years] (exchange)}
+					{#each rows as r (r.coin)}
 						<tr>
-							<td>{exchange}</td>
-							{#each byVenueYear.years as y (y)}
-								<td class="num">{years.get(y)?.toLocaleString('de-DE') ?? ''}</td>
-							{/each}
+							<td><strong>{r.coin}</strong></td>
+							<td class="num">{qty(r.qty, 6)}</td>
+							{#if account === 'all'}
+								<td class="num muted">{r.byAccount.spot.isZero() ? '' : qty(r.byAccount.spot, 6)}</td>
+								<td class="num muted">{r.byAccount.earn.isZero() ? '' : qty(r.byAccount.earn, 6)}</td>
+								<td class="num muted">{r.byAccount.futures.isZero() ? '' : qty(r.byAccount.futures, 2)}</td>
+							{/if}
+							<td class="num">{r.price ? qty(r.price, r.price.lt(1) ? 6 : 2) : '–'}</td>
+							<td class="num"><strong>{money(r.valueEur, 'EUR')}</strong></td>
+							<td class="num muted">{pct(r.share)}</td>
+							<td class="num" title={r.costNote ?? ''}>{r.costEur ? money(r.costEur, 'EUR') : '–'}</td>
+							<td class="num {tone(r.unrealizedEur)}" title={r.costNote ?? ''}>
+								{#if r.unrealizedEur}{money(r.unrealizedEur, 'EUR', { sign: true })}{:else}<span class="note">{r.costNote ? (r.costNote.includes('ohne bekannte') ? 'Einstand teils unbekannt' : r.costNote.startsWith('Historie') ? 'Bestand ≠ Historie' : r.costNote) : '–'}</span>{/if}
+							</td>
 						</tr>
 					{/each}
 				</tbody>
 			</table>
 		</div>
+		{#if portfolio.unpriced.length}<p class="small muted">Ohne Kurs: {portfolio.unpriced.join(', ')}</p>{/if}
+		<p class="small muted">
+			Kurse und Bestände live von Bitget ({data.live ? new Date(data.live.at).toLocaleTimeString('de-DE') : ''}). Euro über den letzten EZB-Kurs. Einstand nach FIFO aus der Buchungshistorie – nur angezeigt, wenn die Historie den Bestand vollständig erklärt.
+		</p>
+	</section>
 
-		<h2>Bitget 2026 nach Typ</h2>
-		<div class="table-wrap">
-			<table>
-				<thead>
-					<tr><th>Konto</th><th>Typ</th><th class="num">Anzahl</th><th>Letzte Buchung</th></tr>
-				</thead>
-				<tbody>
-					{#each current as r (r.exchange + r.type)}
-						<tr>
-							<td>{r.exchange}</td>
-							<td>{r.type}</td>
-							<td class="num">{r.n.toLocaleString('de-DE')}</td>
-							<td>{fmtDate(r.last_ts)}</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
-	</div>
+	{#if positions.length}
+		<section class="card" style="margin-top:16px">
+			<div class="card-title">Offene Futures-Positionen</div>
+			<div class="table-wrap">
+				<table>
+					<thead><tr><th>Symbol</th><th>Seite</th><th class="num">Größe</th><th class="num">Einstieg</th><th class="num">Mark</th><th class="num">Hebel</th><th class="num">Margin</th><th class="num">Liquidation</th><th class="num">Unrealisiert</th></tr></thead>
+					<tbody>
+						{#each positions as p (p.symbol + p.holdSide)}
+							<tr>
+								<td><strong>{p.symbol}</strong></td>
+								<td class={p.holdSide === 'long' ? 'gain' : 'loss'}>{p.holdSide === 'long' ? 'Long' : 'Short'}</td>
+								<td class="num">{qty(D(p.total), 6)}</td>
+								<td class="num">{qty(D(p.openPriceAvg), 6)}</td>
+								<td class="num">{qty(D(p.markPrice), 6)}</td>
+								<td class="num">{p.leverage}×</td>
+								<td class="num">{qty(D(p.marginSize), 2)}</td>
+								<td class="num muted">{p.liquidationPrice ? qty(D(p.liquidationPrice), 4) : '–'}</td>
+								<td class="num {tone(D(p.unrealizedPL))}">{money(D(p.unrealizedPL), 'USDT', { sign: true })}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		</section>
+	{/if}
+{:else if !data.liveError}
+	<p class="muted">Lade Bestände …</p>
 {/if}
 
-{#if data.imports.length}
-	<h2>Importe</h2>
-	<div class="card table-wrap">
-		<table>
-			<thead>
-				<tr><th>Datei</th><th>Status</th><th class="num">Zeilen</th><th>Zeitpunkt</th></tr>
-			</thead>
-			<tbody>
-				{#each data.imports as i (i.id)}
-					<tr>
-						<td>{i.file_name ?? i.source}</td>
-						<td>{i.status}</td>
-						<td class="num">{i.row_count?.toLocaleString('de-DE') ?? ''}</td>
-						<td>{fmtDate(i.created_at)}</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
-{/if}
+<style>
+	.head-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		gap: 12px;
+		flex-wrap: wrap;
+	}
+	.check {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin: 0;
+	}
+	.check input {
+		width: auto;
+	}
+	.note {
+		font-family: var(--font);
+		font-size: 0.8rem;
+		color: var(--muted);
+	}
+</style>

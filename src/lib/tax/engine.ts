@@ -100,13 +100,15 @@ export interface Holding {
 }
 
 export interface TaxResult {
-	year: number;
+	year: number | 'all';
 	engineVersion: string;
 	kap: KapRow[];
 	disposals: Disposal[];
 	earn: EarnRow[];
 	warnings: Warning[];
 	holdingsStart: Holding[];
+	/** Bestand nach der letzten verarbeiteten Buchung (bei 'all' bzw. laufendem Jahr: aktueller Stand). */
+	holdingsEnd: Holding[];
 	categoryCounts: Partial<Record<Category, number>>;
 	totals: {
 		kapGains: Decimal; // positive Ergebnisse aus Termingeschäften (Gewinne)
@@ -133,9 +135,9 @@ export function holdingEnd(acquiredDay: string): string {
 	return `${y}-${md}`;
 }
 
-export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number): TaxResult {
-	const yStart = `${year}-01-01`;
-	const yEnd = `${year}-12-31`;
+export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'all'): TaxResult {
+	const yStart = year === 'all' ? '0000-01-01' : `${year}-01-01`;
+	const yEnd = year === 'all' ? '9999-12-31' : `${year}-12-31`;
 	const inYear = (day: string) => day >= yStart && day <= yEnd;
 
 	const pools = new Map<string, Pool>();
@@ -383,6 +385,7 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number): Ta
 	}
 
 	holdingsStart ??= snapshotHoldings();
+	const holdingsEnd = snapshotHoldings();
 
 	const sum = (xs: (Decimal | null)[]) => xs.reduce<Decimal>((s, x) => (x ? s.add(x) : s), ZERO);
 	const kapOf = (c: Category) => kap.filter((k) => k.category === c);
@@ -410,6 +413,7 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number): Ta
 		earn: [...earn.values()].sort((a, b) => b.eurKnown.cmp(a.eurKnown) || b.bookings - a.bookings),
 		warnings,
 		holdingsStart,
+		holdingsEnd,
 		categoryCounts,
 		totals
 	};
