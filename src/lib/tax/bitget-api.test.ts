@@ -43,10 +43,10 @@ describe('mapApiLedger (Formate aus der Bitget-Inventur 11/2026)', () => {
 		).toEqual(['transfer', 'transfer', 'transfer', 'transfer']);
 	});
 
-	it('Auszahlung: Menge plus Gebühr verlassen das Konto', () => {
+	it('Auszahlung: Betrag inklusive Gebühr wie bei CoinTracking (1,0 SOL am 03.09.2026)', () => {
 		const [e] = mapApiLedger([row({ business_type: 'WITHDRAW', group_type: 'withdraw', coin: 'SOL', size: '-0.994', fees: '-0.006' })]);
 		expect(classify(e!)).toBe('external_out');
-		expect([e!.sell_amount, e!.fee_amount, e!.fee_cur]).toEqual(['0.994', '0.006', 'SOL']);
+		expect([e!.sell_amount, e!.fee_amount, e!.fee_cur]).toEqual(['1', '0.006', 'SOL']);
 	});
 
 	it('Spot-Trade wird über die bizOrderId gepaart', () => {

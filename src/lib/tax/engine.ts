@@ -358,7 +358,9 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number): Ta
 			case 'other_out': {
 				if (!Sc && !Fc) break;
 				const a = Sc ?? Fc!;
-				const qty = Sc && Fc === Sc ? S.add(F) : Sc ? S : F;
+				// Auszahlung: der ausgewiesene Betrag enthält die Netzwerkgebühr bereits
+				// (abgeglichen mit Bitget-Buchungen 11/2026), Gebühr also nicht erneut abziehen
+				const qty = cat === 'external_out' ? (Sc ? S : F) : Sc && Fc === Sc ? S.add(F) : Sc ? S : F;
 				consume(a, qty, e);
 				warn({ kind: cat, day: e.day, txId: e.tx_id, asset: a, qty, note: cat === 'external_out' ? 'Auszahlung nach außen: als eigene Wallet behandelt (nicht steuerbar)' : 'Sonstiger Abgang ohne Erlös' });
 				break;

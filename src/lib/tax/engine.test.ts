@@ -97,6 +97,17 @@ describe('computeTax', () => {
 		expect(t.kapNet.toFixed(2)).toBe('81.00');
 	});
 
+	it('Auszahlung zieht die enthaltene Gebühr nicht doppelt ab', () => {
+		const ledger = [
+			entry({ day: '2026-01-01', buy_amount: '1.006', buy_cur: 'SOL2', sell_amount: '100', sell_cur: 'USDT' }),
+			entry({ day: '2026-09-03', type: 'Withdrawal', comment: 'Withdrawal', sell_amount: '1', sell_cur: 'SOL2', fee_amount: '0.006', fee_cur: 'SOL2' }),
+			entry({ day: '2026-09-04', buy_amount: '5', buy_cur: 'USDT', sell_amount: '0.006', sell_cur: 'SOL2' })
+		];
+		const r = computeTax(ledger, fx, 2026);
+		expect(r.warnings.filter((w) => w.kind === 'consume_shortfall')).toEqual([]);
+		expect(r.disposals.find((d) => d.asset === 'SOL')!.status).toBe('ok');
+	});
+
 	it('Token-Migration übernimmt Anschaffungsdatum und Kosten', () => {
 		const ledger = [
 			entry({ day: '2024-01-01', buy_amount: '10', buy_cur: 'MATIC', sell_amount: '100', sell_cur: 'USDT' }),

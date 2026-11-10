@@ -51,7 +51,8 @@ function move(r: ApiLedgerRow, exchange: string, comment: string): LedgerEntry {
 		e.buy_cur = r.coin;
 	} else {
 		e.type = 'Withdrawal';
-		e.sell_amount = size.abs().toString();
+		// wie CoinTracking: Auszahlungsbetrag inklusive Gebühr (Gebühr nur informativ)
+		e.sell_amount = (comment === 'Withdrawal' ? size.abs().add(fee) : size.abs()).toString();
 		e.sell_cur = r.coin;
 	}
 	if (fee.gt(0)) {
