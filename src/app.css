@@ -289,3 +289,7 @@ td a,
 th {
 	white-space: nowrap;
 }
+
+th.num {
+	font-family: var(--font);
+}
