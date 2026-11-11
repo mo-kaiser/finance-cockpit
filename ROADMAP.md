@@ -1,11 +1,11 @@
 # Roadmap
 
-Stand: 10.11.2026. Reihenfolge = Empfehlung.
+Stand: 11.11.2026. Reihenfolge = Empfehlung.
 
 ## 1. Absicherung (zuerst)
 
-- [x] **Überwachung des täglichen Abrufs** (11/2026, auf staging) – Status im Dashboard und auf der System-Seite; E-Mail über Resend bei fehlgeschlagenem Lauf; Wächter-Cron `/api/cron/watchdog` (16:41 UTC) meldet > 48 h ohne Erfolg und hängengebliebene Läufe.
-- [x] **Backups** (11/2026, auf staging) – `/api/backup` (seitenweise, Beträge als Text), Download-Knopf auf der System-Seite, wöchentliche GitHub-Action im privaten Repo `finance-cockpit-backup` (Vorlage in `tools/backup/`).
+- [x] **Überwachung des täglichen Abrufs** (11/2026, auf staging, Einrichtung durch Mo offen) – Status im Dashboard und auf der System-Seite; E-Mail über Resend bei fehlgeschlagenem Lauf; Wächter-Cron `/api/cron/watchdog` (16:41 UTC) meldet > 48 h ohne Erfolg und hängengebliebene Läufe.
+- [x] **Backups** (11/2026, auf staging, Einrichtung durch Mo offen) – `/api/backup` (seitenweise, Beträge als Text), Download-Knopf auf der System-Seite, wöchentliche GitHub-Action im privaten Repo `finance-cockpit-backup` (Vorlage in `tools/backup/`).
   - [ ] Wiederherstellung einmal testen (Sicherung in Test-Postgres einspielen, Summen vergleichen)
 
 ## 2. Daten vervollständigen
