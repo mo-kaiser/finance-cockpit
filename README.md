@@ -41,5 +41,9 @@ CT_CSV=/pfad/export.csv npm test   # Parser gegen echten Export
 - **CoinTracking „Trade Table“**: Zeitstempel in Europe/Berlin (geprüft an Funding-Zeiten 00/08/16 UTC). Tx-ID ist Dedup-Schlüssel und stabil über Exporte; neuere Exporte ergänzen nur neue Zeilen.
 - **Bitget-API** (folgt): täglicher Vercel-Cron mit Read-Only-Key → `api_records`.
 
-## Branches
-`staging` (Vercel Preview) → PR (Squash) → `main` (Production).
+## Branches & Adressen
+`staging` (Vercel Preview) → PR (Squash) → `main` (Production); danach `main` zurück nach `staging` mergen.
+
+- Production: https://cockpit.moritz-kaiser.com (täglicher Cron läuft nur hier)
+- Staging (feste Branch-Adresse, Login bleibt erhalten): https://finance-cockpit-git-staging-moritzs-projects-a39681ca.vercel.app
+  – nicht die wechselnden Deploy-Links aus der Vercel-Liste verwenden
