@@ -45,12 +45,31 @@ async function earn(periodType: 'flexible' | 'fixed') {
 	}));
 }
 
+/** Earn-Konto gesamt je Coin (alle Earn-Produkte laut Bitget-Doku „earn account assets overview“). */
+async function earnAccount() {
+	return arr(await bitgetGet('/api/v2/earn/account/assets')).map((a) => ({ coin: str(a.coin), qty: str(a.amount) }));
+}
+
+/** On-Chain-Earn („Elite“, z. B. BGETH/BGSOL/BGBTC/BGUSD) mit Wert in USDT. */
+async function elite() {
+	const d = ((await bitgetGet<Raw>('/api/v2/earn/elite/assets')) ?? {}) as Raw;
+	const list = Array.isArray(d) ? (d as Raw[]) : arr(d.resultList);
+	return list.map((r) => ({
+		coin: str(r.productCoin),
+		qty: str(r.holdingAmount),
+		valueUsdt: str(r.usdtHoldingAmount),
+		underlying: str(r.subscriptionCoin),
+		underlyingQty: str(r.exchangeAmount),
+		apr: str(r.apr)
+	}));
+}
+
 /** Live-Bestände und Kurse von Bitget (nur lesend). */
 export const GET: RequestHandler = async ({ locals }) => {
 	const claims = await locals.getClaims();
 	if (claims?.aal !== 'aal2') error(401, 'Nicht angemeldet');
 
-	const [spot, earnFlex, earnFixed, futures, positions, accounts, tickers] = await Promise.all([
+	const [spot, earnFlex, earnFixed, earnAcc, earnElite, futures, positions, accounts, tickers] = await Promise.all([
 		safe(async () =>
 			arr(await bitgetGet('/api/v2/spot/account/assets')).map((a) => ({
 				coin: str(a.coin),
@@ -61,6 +80,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 		),
 		safe(() => earn('flexible')),
 		safe(() => earn('fixed')),
+		safe(earnAccount),
+		safe(elite),
 		safe(async () =>
 			arr(await bitgetGet('/api/v2/mix/account/accounts', { productType: 'USDT-FUTURES' })).map((a) => ({
 				marginCoin: str(a.marginCoin),
@@ -93,5 +114,5 @@ export const GET: RequestHandler = async ({ locals }) => {
 		safe(prices)
 	]);
 
-	return json({ at: new Date().toISOString(), spot, earnFlex, earnFixed, futures, positions, accounts, tickers });
+	return json({ at: new Date().toISOString(), spot, earnFlex, earnFixed, earnAccount: earnAcc, elite: earnElite, futures, positions, accounts, tickers });
 };

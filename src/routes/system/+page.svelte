@@ -83,6 +83,18 @@
 			.join('\n');
 	});
 
+	let liveRaw = $state('');
+	let liveBusy = $state(false);
+	async function loadLiveRaw() {
+		liveBusy = true;
+		const res = await fetch('/api/bitget/live');
+		const body = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
+		// Kurse weglassen (sehr lang), Rest vollständig
+		if (body.tickers?.ok) body.tickers = { ok: true, data: `${Object.keys(body.tickers.data).length} Kurse` };
+		liveRaw = JSON.stringify(body, null, 2);
+		liveBusy = false;
+	}
+
 	async function syncAll() {
 		syncing = true;
 		syncLog = [];
@@ -235,6 +247,13 @@
 	<input id="from" type="date" bind:value={syncFrom} style="max-width:200px" disabled={syncing} />
 	<p><button onclick={syncAll} disabled={syncing}>{syncing ? 'Lade …' : 'Nachladen'}</button></p>
 	{#each syncLog as l, i (i)}<p class="small">{l}</p>{/each}
+</div>
+
+<div class="card" style="margin-top:16px">
+	<h2 style="margin-top:0">Bitget-Bestände (Rohdaten)</h2>
+	<p class="muted small">Zeigt die Antwort der Live-Abfrage, die das Dashboard nutzt – zur Fehlersuche bei abweichenden Beständen.</p>
+	<p><button onclick={loadLiveRaw} disabled={liveBusy}>{liveBusy ? 'Lade …' : 'Rohdaten anzeigen'}</button></p>
+	{#if liveRaw}<textarea readonly rows="16" onfocus={(e) => e.currentTarget.select()}>{liveRaw}</textarea>{/if}
 </div>
 
 <div class="card" style="margin-top:16px">

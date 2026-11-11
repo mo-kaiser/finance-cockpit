@@ -10,6 +10,10 @@ export interface LiveData {
 	spot: Section<{ coin: string; available: string; frozen: string; locked: string }[]>;
 	earnFlex: Section<{ coin: string; qty: string; apy: string }[]>;
 	earnFixed: Section<{ coin: string; qty: string; apy: string }[]>;
+	/** Earn-Konto gesamt je Coin (optional, neuere Antworten) */
+	earnAccount?: Section<{ coin: string; qty: string }[]>;
+	/** On-Chain-Earn (Elite), Wert in USDT von Bitget */
+	elite?: Section<{ coin: string; qty: string; valueUsdt: string; underlying: string; underlyingQty: string; apr: string }[]>;
 	futures: Section<{ marginCoin: string; available: string; locked: string; accountEquity: string; usdtEquity: string; unrealizedPL: string }[]>;
 	positions: Section<{ symbol: string; holdSide: string; total: string; openPriceAvg: string; markPrice: string; unrealizedPL: string; leverage: string; marginSize: string; liquidationPrice: string }[]>;
 	accounts: Section<{ accountType: string; usdtBalance: string }[]>;
@@ -54,7 +58,30 @@ export function buildPortfolio(
 	};
 
 	if (live.spot.ok) for (const a of live.spot.data) put(a.coin, 'spot', D(a.available).add(D(a.frozen)).add(D(a.locked)));
-	for (const s of [live.earnFlex, live.earnFixed]) if (s.ok) for (const e of s.data) put(e.coin, 'earn', D(e.qty));
+
+	// Earn: bevorzugt die Gesamtübersicht des Earn-Kontos; sonst Savings flexibel + fest
+	const earnCoins = new Set<string>();
+	if (live.earnAccount?.ok && live.earnAccount.data.length) {
+		for (const e of live.earnAccount.data) {
+			put(e.coin, 'earn', D(e.qty));
+			earnCoins.add(e.coin);
+		}
+	} else {
+		for (const s of [live.earnFlex, live.earnFixed]) if (s.ok) for (const e of s.data) {
+			put(e.coin, 'earn', D(e.qty));
+			earnCoins.add(e.coin);
+		}
+	}
+	// On-Chain-Earn: nur ergänzen, was die Übersicht nicht schon enthält; Kurs aus Bitgets USDT-Wert
+	const impliedPrice: Record<string, Decimal> = {};
+	if (live.elite?.ok) {
+		for (const e of live.elite.data) {
+			if (earnCoins.has(e.coin)) continue;
+			const q = D(e.qty);
+			put(e.coin, 'earn', q);
+			if (!q.isZero() && e.valueUsdt) impliedPrice[e.coin] = D(e.valueUsdt).div(q);
+		}
+	}
 	if (live.futures.ok) for (const f of live.futures.data) put(f.marginCoin, 'futures', D(f.accountEquity));
 
 	const prices = live.tickers.ok ? live.tickers.data : {};
@@ -66,7 +93,7 @@ export function buildPortfolio(
 	for (const [coin, byAccount] of map) {
 		const qty = [...accounts].reduce((s, a) => s.add(byAccount[a]), new Decimal(0));
 		if (qty.isZero()) continue;
-		const p = prices[coin] ? D(prices[coin]) : null;
+		const p = prices[coin] ? D(prices[coin]) : (impliedPrice[coin] ?? null);
 		if (!p) unpriced.push(coin);
 		const valueUsdt = p ? qty.mul(p) : null;
 		const valueEur = valueUsdt && eurPerUsdt ? valueUsdt.mul(eurPerUsdt) : null;

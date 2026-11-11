@@ -72,6 +72,35 @@
 		};
 	});
 
+	// Abgleich: Kontosummen laut Bitget vs. was das Cockpit je Konto erfasst
+	const ACCOUNT_LABEL: Record<string, string> = {
+		spot: 'Spot',
+		futures: 'Futures',
+		earn: 'Earn',
+		funding: 'Funding',
+		bots: 'Bots',
+		margin: 'Margin',
+		crossed_margin: 'Cross Margin',
+		isolated_margin: 'Isolated Margin',
+		copy_trading: 'Copy-Trading',
+		otc: 'OTC',
+		p2p: 'P2P'
+	};
+	const reconcile = $derived.by(() => {
+		if (!data.live?.accounts.ok) return null;
+		const ours = (acc: Account) => buildPortfolio(data.live!, eurPerUsdt, [], new Set([acc])).totalUsdt;
+		const known: Record<string, Decimal> = { spot: ours('spot'), futures: ours('futures'), earn: ours('earn') };
+		const rows = data.live.accounts.data
+			.map((a) => {
+				const bitget = new Decimal(a.usdtBalance || 0);
+				const cockpit = known[a.accountType] ?? null;
+				return { type: a.accountType, label: ACCOUNT_LABEL[a.accountType] ?? a.accountType, bitget, cockpit, diff: bitget.sub(cockpit ?? 0) };
+			})
+			.filter((r) => !r.bitget.isZero() || (r.cockpit && !r.cockpit.isZero()));
+		const gap = rows.reduce((s, r) => s.add(r.diff.abs()), new Decimal(0));
+		return { rows, gap };
+	});
+
 	const errors = $derived(
 		data.live
 			? (
@@ -79,6 +108,8 @@
 						['Spot', data.live.spot],
 						['Earn flexibel', data.live.earnFlex],
 						['Earn fest', data.live.earnFixed],
+						['Earn-Konto', data.live.earnAccount ?? { ok: true as const, data: [] }],
+						['On-Chain-Earn', data.live.elite ?? { ok: true as const, data: [] }],
 						['Futures-Konto', data.live.futures],
 						['Positionen', data.live.positions],
 						['Kurse', data.live.tickers]
@@ -187,6 +218,31 @@
 			Kurse und Bestände live von Bitget ({data.live ? new Date(data.live.at).toLocaleTimeString('de-DE') : ''}). Euro über den letzten EZB-Kurs. Einstand nach FIFO aus der Buchungshistorie – nur angezeigt, wenn die Historie den Bestand vollständig erklärt.
 		</p>
 	</section>
+
+	{#if reconcile && reconcile.rows.length}
+		<section class="card" style="margin-top:16px">
+			<div class="card-title">Abgleich mit den Kontosummen von Bitget</div>
+			<div class="table-wrap">
+				<table>
+					<thead><tr><th>Bitget-Konto</th><th class="num">laut Bitget (USDT)</th><th class="num">im Cockpit (USDT)</th><th class="num">Differenz</th></tr></thead>
+					<tbody>
+						{#each reconcile.rows as r (r.type)}
+							{@const off = r.diff.abs().gt(Decimal.max(1, r.bitget.abs().mul('0.01')))}
+							<tr>
+								<td>{r.label} <span class="muted small">({r.type})</span></td>
+								<td class="num">{qty(r.bitget, 2)}</td>
+								<td class="num">{r.cockpit ? qty(r.cockpit, 2) : '–'}</td>
+								<td class="num {off ? 'loss' : 'muted'}">{off ? qty(r.diff, 2) : 'passt'}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+			<p class="small muted">
+				Bitget liefert je Kontotyp einen Gesamtwert. Eine Differenz zeigt, dass ein Teil des Vermögens in einem Bereich liegt, dessen Einzelbestände das Cockpit noch nicht abfragt.
+			</p>
+		</section>
+	{/if}
 
 	{#if positions.length}
 		<section class="card" style="margin-top:16px">
