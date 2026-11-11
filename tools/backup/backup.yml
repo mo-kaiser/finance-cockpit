@@ -1,0 +1,34 @@
+# Kopie nach .github/workflows/backup.yml im privaten Repository mo-kaiser/finance-cockpit-backup
+name: Cockpit-Sicherung
+
+on:
+  schedule:
+    - cron: '23 3 * * 0' # sonntags 03:23 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency: backup
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Daten abrufen
+        env:
+          COCKPIT_URL: ${{ vars.COCKPIT_URL || 'https://cockpit.moritz-kaiser.com' }}
+          BACKUP_SECRET: ${{ secrets.BACKUP_SECRET }}
+        run: node backup.mjs data
+      - name: Sichern
+        run: |
+          git config user.name "cockpit-backup"
+          git config user.email "cockpit-backup@users.noreply.github.com"
+          git add data
+          git commit -m "Sicherung $(date -u +%F)" || echo "Keine Änderungen"
+          git push

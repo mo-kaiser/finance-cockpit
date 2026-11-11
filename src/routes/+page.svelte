@@ -6,6 +6,7 @@
 	import { money, pct, qty, tone } from '$lib/format';
 	import { computeTax } from '$lib/tax/engine';
 	import { FxTable } from '$lib/tax/fx';
+	import { ago, assessSync, berlin } from '$lib/monitor/health';
 
 	let { data } = $props();
 
@@ -125,6 +126,8 @@
 	}
 
 	const D = (s: string) => new Decimal(s || 0);
+
+	const sync = $derived(data.syncRuns ? assessSync(data.syncRuns) : null);
 </script>
 
 <div class="page-head">
@@ -142,6 +145,13 @@
 	</div>
 </div>
 
+{#if sync}
+	<p class="sync sync-{sync.level}" title={sync.problems.join('\n')}>
+		<span class="dot" aria-hidden="true"></span>
+		Täglicher Abruf: zuletzt erfolgreich {berlin(sync.lastSuccess)} ({ago(sync.lastSuccess)})
+		{#if sync.level !== 'ok'}· <a href="/system">{sync.problems[0]}</a>{/if}
+	</p>
+{/if}
 {#if data.liveError}<p class="error">Bitget nicht erreichbar: {data.liveError}</p>{/if}
 {#if data.ledgerError}<p class="error">{data.ledgerError}</p>{/if}
 {#each errors as e (e)}<p class="error small">{e}</p>{/each}
@@ -289,6 +299,29 @@
 	}
 	.check input {
 		width: auto;
+	}
+	.sync {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+		font-size: 0.85rem;
+		color: var(--muted);
+		margin: -4px 0 12px;
+	}
+	.dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--gain);
+		flex: none;
+	}
+	.sync-warn .dot,
+	.sync-error .dot {
+		background: var(--loss);
+	}
+	.sync-error {
+		color: var(--loss);
 	}
 	.note {
 		font-family: var(--font);

@@ -4,11 +4,9 @@ Stand: 10.11.2026. Reihenfolge = Empfehlung.
 
 ## 1. Absicherung (zuerst)
 
-- [ ] **Überwachung des täglichen Abrufs** – Bitget liefert Kontobuchungen nur 90 Tage rückwirkend; ein unbemerkt ausgefallener Cron bedeutet Datenverlust.
-  - „Letzter erfolgreicher Abruf“ im Dashboard
-  - E-Mail über Resend bei fehlgeschlagenem Lauf oder wenn 2 Tage kein Lauf erfolgreich war
-- [ ] **Backups** – die Datenbank ist die einzige vollständige Kopie der Bitget-Historie; Supabase Free hat keine Wiederherstellung.
-  - wöchentlicher Export der Rohdaten (`ct_rows`, `api_records`, `manual_adjustments`) als komprimierte Datei, z. B. in ein privates GitHub-Repo, plus Download-Knopf
+- [x] **Überwachung des täglichen Abrufs** (11/2026, auf staging) – Status im Dashboard und auf der System-Seite; E-Mail über Resend bei fehlgeschlagenem Lauf; Wächter-Cron `/api/cron/watchdog` (16:41 UTC) meldet > 48 h ohne Erfolg und hängengebliebene Läufe.
+- [x] **Backups** (11/2026, auf staging) – `/api/backup` (seitenweise, Beträge als Text), Download-Knopf auf der System-Seite, wöchentliche GitHub-Action im privaten Repo `finance-cockpit-backup` (Vorlage in `tools/backup/`).
+  - [ ] Wiederherstellung einmal testen (Sicherung in Test-Postgres einspielen, Summen vergleichen)
 
 ## 2. Daten vervollständigen
 

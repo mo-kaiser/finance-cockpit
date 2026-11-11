@@ -1,7 +1,72 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { ago, assessSync, berlin } from '$lib/monitor/health';
 
 	let { data, form } = $props();
+
+	const sync = $derived(assessSync(data.syncRuns));
+
+	/** Kurzfassung der Lauf-Notiz (JSON mit Ergebnis je Schnittstelle) */
+	function runSummary(note: string | null): string {
+		if (!note) return '';
+		try {
+			const o = JSON.parse(note) as Record<string, { received?: number; stored?: number; error?: string } | string>;
+			return Object.entries(o)
+				.map(([k, v]) => (typeof v === 'string' ? `${k}: ${v}` : v.error ? `${k}: ${v.error}` : `${k} ${v.stored ?? 0} neu`))
+				.join(' · ');
+		} catch {
+			return note;
+		}
+	}
+	// Datensicherung als Download: alle Tabellen seitenweise, eine gzip-komprimierte NDJSON-Datei
+	let backupBusy = $state(false);
+	let backupMsg = $state('');
+	let backupErr = $state('');
+	async function downloadBackup() {
+		backupBusy = true;
+		backupMsg = '';
+		backupErr = '';
+		try {
+			const get = async (q: string) => {
+				const res = await fetch(`/api/backup${q}`);
+				const body = await res.json().catch(() => ({}));
+				if (!res.ok) throw new Error(body.message ?? `HTTP ${res.status}`);
+				return body;
+			};
+			const { tables } = (await get('')) as { tables: { name: string }[] };
+			const lines: string[] = [JSON.stringify({ backup: 'finance-cockpit', version: 1, created_at: new Date().toISOString() })];
+			const counts: string[] = [];
+			for (const t of tables) {
+				let offset: number | null = 0;
+				let n = 0;
+				let total: number | undefined;
+				while (offset !== null) {
+					backupMsg = `${t.name}: ${n.toLocaleString('de-DE')} Zeilen …`;
+					const page = (await get(`?table=${t.name}&offset=${offset}`)) as { rows: unknown[]; next: number | null; total?: number };
+					if (offset === 0) total = page.total;
+					for (const row of page.rows) lines.push(JSON.stringify({ table: t.name, row }));
+					n += page.rows.length;
+					offset = page.next;
+				}
+				if (total !== undefined && total !== n) throw new Error(`${t.name}: ${n} von ${total} Zeilen gelesen – Sicherung unvollständig`);
+				counts.push(`${t.name} ${n.toLocaleString('de-DE')}`);
+			}
+			const gz = new Blob([lines.join('\n') + '\n']).stream().pipeThrough(new CompressionStream('gzip'));
+			const blob = await new Response(gz).blob();
+			const a = document.createElement('a');
+			a.href = URL.createObjectURL(blob);
+			a.download = `cockpit-backup-${new Date().toISOString().slice(0, 10)}.ndjson.gz`;
+			a.click();
+			setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+			backupMsg = `Fertig (${(blob.size / 1e6).toFixed(1)} MB): ${counts.join(' · ')}`;
+		} catch (e) {
+			backupErr = (e as Error).message;
+			backupMsg = '';
+		}
+		backupBusy = false;
+	}
+
+	const STATUS: Record<string, string> = { done: 'erfolgreich', failed: 'fehlgeschlagen', running: 'läuft' };
 
 	interface ProbeResult {
 		key: string;
@@ -153,6 +218,57 @@
 	<p class="muted small">
 		Nach Änderungen in Vercel ist ein Redeploy nötig, bevor neue Werte hier ankommen.
 	</p>
+</div>
+
+<div class="card" style="margin-top:16px">
+	<h2 style="margin-top:0">Täglicher Abruf</h2>
+	<p class="sync-{sync.level}">
+		Zuletzt erfolgreich: <strong>{berlin(sync.lastSuccess)}</strong> ({ago(sync.lastSuccess)})
+	</p>
+	{#each sync.problems as p (p)}<p class="error small">{p}</p>{/each}
+	{#if data.syncRunsError}<p class="error small">{data.syncRunsError}</p>{/if}
+	<p class="muted small">
+		Abruf täglich um 04:17 UTC (nur Production). Schlägt ein Lauf fehl, kommt sofort eine E-Mail; ein Wächter prüft
+		zusätzlich jeden Nachmittag, ob seit über 2 Tagen kein Lauf erfolgreich war.
+	</p>
+	<form method="POST" action="?/testmail" use:enhance>
+		<button type="submit">Test-E-Mail senden</button>
+	</form>
+	{#if form?.testmail}
+		<p class={form.testmail.ok ? 'ok' : 'error'}>
+			{form.testmail.ok ? 'Test-E-Mail wurde an Resend übergeben – bitte Postfach (auch Spam) prüfen.' : `E-Mail fehlgeschlagen: ${form.testmail.error}`}
+		</p>
+	{/if}
+	{#if data.syncRuns.length}
+		<details>
+			<summary><span>Letzte {data.syncRuns.length} Läufe</span></summary>
+			<div class="table-wrap">
+				<table>
+					<thead><tr><th>Start</th><th>Status</th><th>Ergebnis</th></tr></thead>
+					<tbody>
+						{#each data.syncRuns as r (r.id)}
+							<tr>
+								<td class="small">{berlin(r.created_at)}</td>
+								<td class={r.status === 'done' ? 'ok' : r.status === 'failed' ? 'error' : ''}>{STATUS[r.status] ?? r.status}</td>
+								<td class="small">{runSummary(r.note)}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		</details>
+	{/if}
+</div>
+
+<div class="card" style="margin-top:16px">
+	<h2 style="margin-top:0">Datensicherung</h2>
+	<p class="muted small">
+		Lädt alle Rohdaten (CoinTracking-Import, Bitget-API, Korrekturen, Snapshots, Kurse) als eine komprimierte Datei
+		herunter. Beträge exakt als Text. Zusätzlich sichert eine GitHub-Action jede Woche in ein privates Repository.
+	</p>
+	<p><button onclick={downloadBackup} disabled={backupBusy}>{backupBusy ? 'Sichere …' : 'Sicherung herunterladen'}</button></p>
+	{#if backupMsg}<p class="small">{backupMsg}</p>{/if}
+	{#if backupErr}<p class="error">{backupErr}</p>{/if}
 </div>
 
 <div class="card" style="margin-top:16px">
@@ -317,8 +433,12 @@
 		align-items: baseline;
 		flex-wrap: wrap;
 	}
-	.ok {
+	.ok,
+	.sync-ok strong {
 		color: var(--gain);
+	}
+	.sync-error strong {
+		color: var(--loss);
 	}
 	.small {
 		font-size: 0.85rem;
