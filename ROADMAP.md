@@ -26,12 +26,20 @@ Stand: 10.11.2026. Reihenfolge = Empfehlung.
 - [ ] **Prüfliste abhaken & Korrekturen**: Warnungen auf der Steuer-Seite als „geprüft“ markieren; fehlende Anschaffungsdaten (z. B. DOT, MINA) über eine Maske nachtragen (`manual_adjustments`)
 - [ ] **Jahresabschluss 2026** (Januar 2027): eingefrorener Snapshot (`report_snapshots`) und PDF für Steuererklärung / Steuerberater
 
-## 4. Technik (ohne Eile)
+## 4. KuCoin per API
+
+- [ ] Ursache des API-Fehlers bei CoinTracking klären; eigenen Read-Only-Key für das Cockpit anlegen
+- [ ] Reichweiten-Prüfung und Inventur der KuCoin-Buchungsarten (wie bei Bitget), Spot/Trading, Funding, ggf. Futures (eigene API)
+- [ ] Rohdaten in `api_records` (source `kucoin`), täglicher Abruf; Dedup gegen den CoinTracking-Import (KuCoin-Historie bis 08/2025)
+- [ ] Steuer: Ledger-View und Mapper je Börse; FIFO-Bestände je Börse statt je Coin global (Methode mit Steuerberater bestätigen)
+- [ ] Dashboard/Analysen: Broker-Auswahl Bitget / KuCoin / alle
+
+## 5. Technik (ohne Eile)
 
 - [ ] GitHub Action: Typecheck und Tests bei jedem Pull Request
 - [ ] Sicherheit: Content-Security-Policy-Header, Supabase „Leaked Password Protection“, jährliche Rotation des Bitget-Keys mit Erinnerung
 - [ ] Performance: bei Bedarf Zusammenfassungen in die Datenbank verlagern (derzeit ~15.000 Buchungen im Browser)
-- [ ] Weitere Broker per API (KuCoin-API-Fehler prüfen); Dashboard ist für mehrere Broker vorbereitet
+- [ ] Weitere Broker per API; Dashboard ist für mehrere Broker vorbereitet
 
 ## Offene Prüfpunkte
 
