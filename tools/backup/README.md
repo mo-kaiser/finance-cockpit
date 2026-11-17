@@ -12,3 +12,5 @@ stehen als Text, damit nichts gerundet wird. Abgeleitete Spalten (`ct_rows.venue
 sie entstehen beim Einspielen neu. `manifest.json` nennt Zeitpunkt und Zeilenzahl je Tabelle.
 
 Schlägt die Action fehl, schickt GitHub eine E-Mail.
+
+Wiederherstellungstest: `restore-test.mjs` (Anleitung im Kopf der Datei). Zum echten Einspielen in ein neues Supabase-Projekt: Migrationen ausführen, User anlegen, dann die Zeilen in derselben Reihenfolge einfügen wie im Testskript (Insert mit `overriding system value` für `ct_rows`/`api_records`).

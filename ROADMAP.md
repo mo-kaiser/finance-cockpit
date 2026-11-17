@@ -6,9 +6,9 @@ Stand: 17.11.2026. Reihenfolge = Empfehlung.
 
 - [x] **Überwachung des täglichen Abrufs** (seit 17.11.2026 live) – Status im Dashboard und auf der System-Seite; E-Mail über Resend bei fehlgeschlagenem Lauf; Wächter-Cron `/api/cron/watchdog` (16:41 UTC) meldet > 48 h ohne Erfolg und hängengebliebene Läufe.
 - [x] **Backups** (seit 17.11.2026 live, erster Lauf 2,8 MB) – `/api/backup` (seitenweise, Beträge als Text), Download-Knopf auf der System-Seite, wöchentliche GitHub-Action im privaten Repo `finance-cockpit-backup` (sonntags 03:23 UTC; Vorlage in `tools/backup/`).
-  - [ ] Wiederherstellung einmal testen (Sicherung in Test-Postgres einspielen, Summen vergleichen)
+  - [x] Wiederherstellung getestet (17.11.2026, `tools/backup/restore-test.mjs`): alle Tabellen vollständig und wertgleich, Summen = CoinTracking-CSV
 
-- [x] **Karte „Ein- und Auszahlungen“** im Dashboard (17.11.2026)
+- [x] **Karte „Ein- und Auszahlungen“** im Dashboard (17.11.2026), inkl. Euro-Einzahlungen per Überweisung (Bitget bucht sie als Kauf EUR → USDT)
   - [ ] Namen für bekannte Adressen (z. B. „KuCoin“), damit Herkunft/Ziel benannt sind
 
 ## 2. Daten vervollständigen
