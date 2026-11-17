@@ -45,6 +45,8 @@ function move(r: ApiLedgerRow, exchange: string, comment: string): LedgerEntry {
 	const size = D(r.size);
 	const fee = D(r.fees).abs();
 	e.comment = comment;
+	// Bitget-Buchungsart erhalten (z. B. SINGLE_USER_OUT = Earn-Anlage), nur zur Anzeige
+	e.trade_group = r.business_type;
 	if (size.gte(0)) {
 		e.type = 'Deposit';
 		e.buy_amount = size.toString();

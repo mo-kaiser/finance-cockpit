@@ -17,6 +17,8 @@ export interface EndpointDef {
 	maxDays: number;
 	/** Grundlage für die Steuerberechnung (gleiche IDs wie CoinTracking) oder nur Zusatzinfo. */
 	role: 'ledger' | 'detail';
+	/** Datensatz kann sich bei Bitget noch ändern (Status pending → success): vorhandene Zeile mit der neuen Fassung überschreiben */
+	refresh?: boolean;
 	/** Liste aus der Antwort ziehen. */
 	list: (data: unknown) => Item[];
 	/** Cursor für die nächste (ältere) Seite. */
@@ -78,6 +80,7 @@ export const ENDPOINTS: EndpointDef[] = [
 	},
 	{
 		key: 'deposits',
+		refresh: true,
 		label: 'Einzahlungen',
 		path: '/api/v2/spot/wallet/deposit-records',
 		params: {},
@@ -92,6 +95,7 @@ export const ENDPOINTS: EndpointDef[] = [
 	},
 	{
 		key: 'withdrawals',
+		refresh: true,
 		label: 'Auszahlungen',
 		path: '/api/v2/spot/wallet/withdrawal-records',
 		params: {},
@@ -142,7 +146,10 @@ export function windows(ep: EndpointDef, start: number, end: number) {
 	return out;
 }
 
-/** Speichert Rohdatensätze unverändert; vorhandene (gleiche ID) werden übersprungen. */
+/**
+ * Speichert Rohdatensätze unverändert; vorhandene (gleiche ID) werden übersprungen.
+ * Ausnahme `refresh`: Ein-/Auszahlungen werden durch Bitgets neueste Fassung ersetzt (Status), „stored“ zählt dann auch Aktualisierungen.
+ */
 export async function storeRecords(
 	admin: SupabaseClient,
 	userId: string,
@@ -172,7 +179,7 @@ export async function storeRecords(
 		const chunk = rows.slice(i, i + 500);
 		const { error, count } = await admin
 			.from('api_records')
-			.upsert(chunk, { onConflict: 'user_id,source,endpoint,record_id', ignoreDuplicates: true, count: 'exact' });
+			.upsert(chunk, { onConflict: 'user_id,source,endpoint,record_id', ignoreDuplicates: !ep.refresh, count: 'exact' });
 		if (error) throw new Error(`Speichern ${ep.key}: ${error.message}`);
 		stored += count ?? 0;
 	}

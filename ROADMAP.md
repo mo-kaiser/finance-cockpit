@@ -1,14 +1,12 @@
 # Roadmap
 
-Stand: 10.11.2026. Reihenfolge = Empfehlung.
+Stand: 11.11.2026. Reihenfolge = Empfehlung.
 
 ## 1. Absicherung (zuerst)
 
-- [ ] **Überwachung des täglichen Abrufs** – Bitget liefert Kontobuchungen nur 90 Tage rückwirkend; ein unbemerkt ausgefallener Cron bedeutet Datenverlust.
-  - „Letzter erfolgreicher Abruf“ im Dashboard
-  - E-Mail über Resend bei fehlgeschlagenem Lauf oder wenn 2 Tage kein Lauf erfolgreich war
-- [ ] **Backups** – die Datenbank ist die einzige vollständige Kopie der Bitget-Historie; Supabase Free hat keine Wiederherstellung.
-  - wöchentlicher Export der Rohdaten (`ct_rows`, `api_records`, `manual_adjustments`) als komprimierte Datei, z. B. in ein privates GitHub-Repo, plus Download-Knopf
+- [x] **Überwachung des täglichen Abrufs** (11/2026, auf staging, Einrichtung durch Mo offen) – Status im Dashboard und auf der System-Seite; E-Mail über Resend bei fehlgeschlagenem Lauf; Wächter-Cron `/api/cron/watchdog` (16:41 UTC) meldet > 48 h ohne Erfolg und hängengebliebene Läufe.
+- [x] **Backups** (11/2026, auf staging, Einrichtung durch Mo offen) – `/api/backup` (seitenweise, Beträge als Text), Download-Knopf auf der System-Seite, wöchentliche GitHub-Action im privaten Repo `finance-cockpit-backup` (Vorlage in `tools/backup/`).
+  - [ ] Wiederherstellung einmal testen (Sicherung in Test-Postgres einspielen, Summen vergleichen)
 
 ## 2. Daten vervollständigen
 
@@ -26,12 +24,20 @@ Stand: 10.11.2026. Reihenfolge = Empfehlung.
 - [ ] **Prüfliste abhaken & Korrekturen**: Warnungen auf der Steuer-Seite als „geprüft“ markieren; fehlende Anschaffungsdaten (z. B. DOT, MINA) über eine Maske nachtragen (`manual_adjustments`)
 - [ ] **Jahresabschluss 2026** (Januar 2027): eingefrorener Snapshot (`report_snapshots`) und PDF für Steuererklärung / Steuerberater
 
-## 4. Technik (ohne Eile)
+## 4. KuCoin per API
+
+- [ ] Ursache des API-Fehlers bei CoinTracking klären; eigenen Read-Only-Key für das Cockpit anlegen
+- [ ] Reichweiten-Prüfung und Inventur der KuCoin-Buchungsarten (wie bei Bitget), Spot/Trading, Funding, ggf. Futures (eigene API)
+- [ ] Rohdaten in `api_records` (source `kucoin`), täglicher Abruf; Dedup gegen den CoinTracking-Import (KuCoin-Historie bis 08/2025)
+- [ ] Steuer: Ledger-View und Mapper je Börse; FIFO-Bestände je Börse statt je Coin global (Methode mit Steuerberater bestätigen)
+- [ ] Dashboard/Analysen: Broker-Auswahl Bitget / KuCoin / alle
+
+## 5. Technik (ohne Eile)
 
 - [ ] GitHub Action: Typecheck und Tests bei jedem Pull Request
 - [ ] Sicherheit: Content-Security-Policy-Header, Supabase „Leaked Password Protection“, jährliche Rotation des Bitget-Keys mit Erinnerung
 - [ ] Performance: bei Bedarf Zusammenfassungen in die Datenbank verlagern (derzeit ~15.000 Buchungen im Browser)
-- [ ] Weitere Broker per API (KuCoin-API-Fehler prüfen); Dashboard ist für mehrere Broker vorbereitet
+- [ ] Weitere Broker per API; Dashboard ist für mehrere Broker vorbereitet
 
 ## Offene Prüfpunkte
 

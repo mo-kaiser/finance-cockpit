@@ -2,11 +2,22 @@ import { env } from '$env/dynamic/private';
 import { bitgetGet, BitgetError } from '$lib/server/bitget';
 import { supabaseAdmin } from '$lib/server/supabase-admin';
 import { ENDPOINTS } from '$lib/server/bitget-sync';
+import { sendAlert } from '$lib/server/alert';
+import type { SyncRun } from '$lib/monitor/health';
 import type { Actions, PageServerLoad } from './$types';
 
-const VARS = ['BITGET_API_KEY', 'BITGET_API_SECRET', 'BITGET_API_PASSPHRASE', 'SUPABASE_SECRET_KEY', 'CRON_SECRET'] as const;
+const VARS = [
+	'BITGET_API_KEY',
+	'BITGET_API_SECRET',
+	'BITGET_API_PASSPHRASE',
+	'SUPABASE_SECRET_KEY',
+	'CRON_SECRET',
+	'RESEND_API_KEY',
+	'ALERT_EMAIL_TO',
+	'BACKUP_SECRET'
+] as const;
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ locals }) => {
 	// Nur ob vorhanden und wie lang – niemals den Wert selbst
 	const vars = VARS.map((name) => {
 		const v = env[name] ?? '';
@@ -18,8 +29,16 @@ export const load: PageServerLoad = async () => {
 			quoted: /^["'].*["']$/.test(v)
 		};
 	});
+	const { data: runs, error: runsErr } = await locals.supabase
+		.from('imports')
+		.select('id, status, note, created_at, finished_at')
+		.eq('source', 'bitget_api')
+		.order('created_at', { ascending: false })
+		.limit(30);
 	return {
 		vars,
+		syncRuns: (runs ?? []) as SyncRun[],
+		syncRunsError: runsErr?.message ?? null,
 		vercelEnv: env.VERCEL_ENV ?? 'lokal',
 		endpoints: ENDPOINTS.map((e) => ({ key: e.key, label: e.label, windowDays: e.windowDays, maxDays: e.maxDays, role: e.role }))
 	};
@@ -33,6 +52,14 @@ interface AccountInfo {
 }
 
 export const actions: Actions = {
+	testmail: async () => {
+		const r = await sendAlert('Test-E-Mail', [
+			'Diese E-Mail wurde auf der System-Seite des Cockpits ausgelöst.',
+			`Umgebung: ${env.VERCEL_ENV ?? 'lokal'}`,
+			'Wenn sie ankommt, funktionieren die Warnungen des täglichen Abrufs.'
+		]);
+		return { testmail: r };
+	},
 	bitget: async () => {
 		try {
 			const info = await bitgetGet<AccountInfo>('/api/v2/spot/account/info');
