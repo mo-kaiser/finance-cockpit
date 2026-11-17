@@ -104,6 +104,8 @@ export interface Holding {
 	qtyCostUnknown: Decimal;
 	/** Menge ohne bekannte Kosten nach Herkunft (z. B. external_in = Einzahlung von außen) */
 	unknownBySource?: Partial<Record<Category, Decimal>>;
+	/** Menge mit geschätzten Kosten (z. B. Einzahlung von außen zum Tageswert) */
+	qtyEstimated?: Decimal;
 }
 
 export interface TaxResult {
@@ -282,15 +284,19 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 				let costKnown = ZERO;
 				let qtyCostUnknown = ZERO;
 				const unknownBySource: Partial<Record<Category, Decimal>> = {};
+				let qtyEstimated = ZERO;
 				for (let i = p.head; i < p.lots.length; i++) {
 					const l = p.lots[i]!;
 					qty = qty.add(l.qty);
 					if (l.cost === null) {
 						qtyCostUnknown = qtyCostUnknown.add(l.qty);
 						unknownBySource[l.source] = (unknownBySource[l.source] ?? ZERO).add(l.qty);
-					} else costKnown = costKnown.add(l.cost);
+					} else {
+						costKnown = costKnown.add(l.cost);
+						if (l.estimated) qtyEstimated = qtyEstimated.add(l.qty);
+					}
 				}
-				return { asset: a, qty, costKnown, qtyCostUnknown, unknownBySource };
+				return { asset: a, qty, costKnown, qtyCostUnknown, unknownBySource, qtyEstimated };
 			})
 			.filter((h) => h.qty.gt(0))
 			.sort((a, b) => b.costKnown.cmp(a.costKnown));
@@ -371,10 +377,10 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 				const qty = Fc === Bc ? B.sub(F) : B;
 				const stable = USD_STABLE.has(Bc) || Bc === FIAT_EUR;
 				// Earn-Erträge in Coins: Wert am Zuflusstag = Einkünfte § 22 Nr. 3 und Anschaffungskosten des Bestands.
-				// Einzahlungen von außen bewusst nicht über den Kurs: die echten Kosten liegen bei der abgebenden Börse.
-				// Sonstige Zugänge (bei Bitget v. a. Umtausch von Kleinstbeträgen in BGB, „Exchange income“):
-				// Kosten = Marktwert am Tag, als geschätzt markiert.
-				const coinValue = !stable && (cat === 'earn_income' || cat === 'other_in') ? priceEur(Bc, qty, e.day) : null;
+				// Sonstige Zugänge (bei Bitget v. a. Umtausch von Kleinstbeträgen in BGB, „Exchange income“) und
+				// Einzahlungen von außen: Kosten = Marktwert am Tag, als geschätzt markiert. Bei Einzahlungen gilt
+				// der Einzahlungstag als Kaufdatum, solange keine Korrektur (echtes Kaufdatum/Kosten) nachgetragen ist.
+				const coinValue = !stable ? priceEur(Bc, qty, e.day) : null;
 				const value = stable ? valueEur(Bc, qty, e.day, e) : coinValue;
 				acquire(Bc, qty, value, e, cat, (cat === 'external_in' || cat === 'other_in') && value !== null);
 				if (cat === 'earn_income' && inYear(e.day)) {
@@ -387,7 +393,7 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 					earn.set(Bc, r);
 				}
 				if (cat === 'external_in') {
-					warn({ kind: 'external_in', day: e.day, txId: e.tx_id, asset: Bc, qty, note: value ? 'Stablecoin-Einzahlung, Kosten zum Tageswert geschätzt' : 'Einzahlung von außen, Anschaffungsdaten fehlen' });
+					warn({ kind: 'external_in', day: e.day, txId: e.tx_id, asset: Bc, qty, note: value ? 'Einzahlung von außen: Kaufdatum = Einzahlungstag, Kosten = Tageswert (geschätzt)' : 'Einzahlung von außen ohne Tageskurs, Anschaffungsdaten fehlen' });
 				}
 				break;
 			}

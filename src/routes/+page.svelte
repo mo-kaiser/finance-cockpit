@@ -234,7 +234,10 @@
 							<td class="num">{r.price ? qty(r.price, r.price.lt(1) ? 6 : 2) : '–'}</td>
 							<td class="num"><strong>{money(r.valueEur, 'EUR')}</strong></td>
 							<td class="num muted">{pct(r.share)}</td>
-							<td class="num" title={r.costNote ?? ''}>{r.costEur ? money(r.costEur, 'EUR') : '–'}</td>
+							<td class="num" title={r.costNote ?? ''}>
+								{r.costEur ? money(r.costEur, 'EUR') : '–'}
+								{#if r.costEur && r.costNote?.startsWith('Einstand für')}<div class="note">teils geschätzt</div>{/if}
+							</td>
 							<td class="num {tone(r.unrealizedEur)}" title={r.costNote ?? ''}>
 								{#if r.unrealizedEur}{money(r.unrealizedEur, 'EUR', { sign: true })}{:else}<span class="note">{r.costNote ? (r.costNote.includes('ohne bekannte') ? 'Einstand teils unbekannt' : r.costNote.startsWith('Historie') ? 'Bestand ≠ Historie' : r.costNote) : '–'}</span>{/if}
 							</td>

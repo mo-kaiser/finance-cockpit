@@ -123,7 +123,11 @@ export function buildPortfolio(
 			const diff = h.qty.sub(liveTotal).abs();
 			const tol = Decimal.max(liveTotal.mul('0.01'), new Decimal('0.000001'));
 			if (diff.gt(tol)) costNote = `Historie ${h.qty.toSignificantDigits(8)} ≠ Bestand`;
-			else costEur = h.costKnown.mul(qty).div(h.qty);
+			else {
+				costEur = h.costKnown.mul(qty).div(h.qty);
+				if (h.qtyEstimated && !h.qtyEstimated.isZero())
+					costNote = `Einstand für ${h.qtyEstimated.toSignificantDigits(6)} geschätzt (Tageswert bei Einzahlung bzw. Umtausch)`;
+			}
 		}
 		rows.push({
 			coin,

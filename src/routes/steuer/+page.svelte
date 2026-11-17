@@ -171,6 +171,7 @@
 			<li>Perpetual Futures gelten als Termingeschäfte (§ 20 Abs. 2 S. 1 Nr. 3 EStG); das BMF-Schreiben vom 06.03.2025 regelt sie nicht ausdrücklich.</li>
 			<li>Spot: FIFO je Coin über alle Bitget-Konten, Haltefrist ein Jahr (§ 23 EStG). Auch Käufe mit USDT sind Veräußerungen von USDT.</li>
 			<li>Earn-Erträge und Tausch Coin gegen Coin werden mit dem Bitget-Tagesschlusskurs (USDT, UTC-Tageskerze) des Zuflusstags bewertet, umgerechnet mit dem EZB-Kurs. Der Wert eines Zinsertrags ist zugleich die Anschaffungskosten des Zins-Bestands.</li>
+			<li>Einzahlungen von außen (andere Börse, Wallet): solange keine Korrektur nachgetragen ist, gelten der Einzahlungstag als Kaufdatum und der Tageswert als Anschaffungskosten (geschätzt). Das echte Kaufdatum kann früher liegen – dann wäre ein Verkauf eventuell schon steuerfrei.</li>
 			<li>Gebühren im gekauften Coin mindern die erhaltene Menge, Gebühren im verkauften Coin erhöhen die abgegebene Menge.</li>
 			<li>Auszahlungen nach außen gelten als Übertrag auf eine eigene Wallet (nicht steuerbar).</li>
 			<li>Zeiten in Europe/Berlin. Engine-Version {result.engineVersion}.</li>

@@ -103,9 +103,20 @@ describe('computeTax mit Tageskursen', () => {
 		expect(r.holdingsEnd[0]!.qtyCostUnknown.isZero()).toBe(true);
 	});
 
-	it('bewertet Einzahlungen von außen nicht über den Kurs', () => {
-		const r = computeTax([entry({ day: '2026-03-01', type: 'Deposit', comment: 'Deposit', buy_amount: '1', buy_cur: 'ETH' })], fx, 2026, prices);
-		expect(r.holdingsEnd[0]!.qtyCostUnknown.toString()).toBe('1');
+	it('setzt bei Einzahlungen von außen Einzahlungstag und Tageswert als geschätzten Einstand', () => {
+		const ledger = [
+			entry({ day: '2026-03-01', type: 'Deposit', comment: 'Deposit', buy_amount: '1', buy_cur: 'ETH' }), // 2000 USD = 1600 EUR
+			// Verkauf nach drei Monaten → innerhalb der Haltefrist ab Einzahlungstag
+			entry({ day: '2026-06-01', type: 'Trade', buy_amount: '2500', buy_cur: 'USDT', sell_amount: '1', sell_cur: 'ETH' }) // 2000 EUR
+		];
+		const r = computeTax(ledger, fx, 2026, prices);
+		expect(r.disposals[0]!.status).toBe('geschaetzt');
+		expect(r.totals.soTaxableGain.toString()).toBe('400');
+		expect(r.warnings.find((w) => w.kind === 'external_in')!.note).toContain('Einzahlungstag');
+	});
+
+	it('ohne Tageskurs bleibt die Einzahlung ohne Kosten', () => {
+		const r = computeTax([entry({ day: '2026-03-01', type: 'Deposit', comment: 'Deposit', buy_amount: '1', buy_cur: 'ZZZ' })], fx, 2026, prices);
 		expect(r.holdingsEnd[0]!.unknownBySource!.external_in!.toString()).toBe('1');
 	});
 });
