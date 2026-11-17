@@ -142,6 +142,8 @@
 	const movements = $derived(data.ledger ? buildMovements(data.ledger.ledger, data.wallet) : []);
 	const movesShown = $derived(moveFilter === 'all' ? movements : movements.filter((m) => m.bucket === moveFilter));
 	const pending = $derived(movements.filter((m) => m.status === 'pending'));
+	const eurIn = $derived(movements.reduce((s, m) => (m.eur && m.direction === 'in' ? s.add(m.eur) : s), new Decimal(0)));
+	const eurOut = $derived(movements.reduce((s, m) => (m.eur && m.direction === 'out' ? s.add(m.eur) : s), new Decimal(0)));
 	const DIR = { in: 'Eingang', out: 'Ausgang', move: 'Umbuchung' } as const;
 	const STATUS_LABEL = { success: 'erledigt', pending: 'ausstehend', failed: 'fehlgeschlagen' } as const;
 </script>
@@ -309,6 +311,11 @@
 				{/each}
 			</div>
 		</div>
+		{#if (moveFilter === 'external' || moveFilter === 'all') && !eurIn.isZero()}
+			<p class="small">
+				Euro vom Bankkonto eingezahlt: <strong>{money(eurIn, 'EUR')}</strong>{#if !eurOut.isZero()} · ausgezahlt: <strong>{money(eurOut, 'EUR')}</strong>{/if}
+			</p>
+		{/if}
 		{#if pending.length}
 			<p class="small loss">{pending.length} {pending.length === 1 ? 'Bewegung ist' : 'Bewegungen sind'} noch ausstehend.</p>
 		{/if}
@@ -326,11 +333,12 @@
 								<td class={m.direction === 'in' ? 'gain' : m.direction === 'out' ? 'loss' : 'muted'}>{DIR[m.direction]}</td>
 								<td class="num">
 									{m.direction === 'out' ? '−' : m.direction === 'in' ? '+' : ''}{qty(m.amount, 8)}
+									{#if m.eur}<div class="note">{m.direction === 'in' ? 'für' : 'gegen'} {money(m.eur, 'EUR')}</div>{/if}
 									{#if m.fee}<div class="note">Gebühr {qty(m.fee, 8)}</div>{/if}
 								</td>
 								<td><strong>{m.coin}</strong></td>
 								<td class="nowrap">{m.from} → {m.to}</td>
-								<td class="small">{m.viaBitget ? 'Bitget-intern' : (m.chain ?? '')}</td>
+								<td class="small">{m.eur ? 'SEPA' : m.viaBitget ? 'Bitget-intern' : (m.chain ?? '')}</td>
 								<td class="small mono">
 									{#if m.address}<span title={m.address}>{shortAddr(m.address)}</span>{/if}
 									{#if m.txHash}<div class="note" title={m.txHash}>Tx {shortAddr(m.txHash)}</div>{/if}
@@ -349,7 +357,7 @@
 		{/if}
 		<p class="small muted">
 			Aus den Kontobuchungen (CoinTracking-Import und täglicher Bitget-Abruf); Netzwerk, Adresse und Status aus Bitgets
-			Ein-/Auszahlungsdaten (rund ein Jahr zurück). Umbuchungen zwischen Bitget-Konten sind zu einer Zeile zusammengefasst; „?“
+			Ein-/Auszahlungsdaten (rund ein Jahr zurück). Euro-Einzahlungen bucht Bitget direkt als Kauf von USDT/USDC; gezeigt wird der gekaufte Betrag mit dem Euro-Betrag darunter. Umbuchungen zwischen Bitget-Konten sind zu einer Zeile zusammengefasst; „?“
 			heißt, die Gegenbuchung ist nicht bekannt. Bitget kennt nur die Adresse, nicht die absendende Börse.
 		</p>
 	</section>

@@ -38,6 +38,8 @@ export interface Movement {
 	txHash: string | null;
 	/** Bitget-interne Überweisung (UID, E-Mail) statt Blockchain */
 	viaBitget: boolean;
+	/** Euro-Betrag bei Einzahlung/Auszahlung über das Bankkonto (Kauf/Verkauf gegen EUR) */
+	eur: Decimal | null;
 	/** Herkunft: Ledger (gebucht) oder nur Bitget-Ein-/Auszahlungsdaten (noch nicht gebucht, ausstehend) */
 	source: 'ledger' | 'record';
 }
@@ -130,6 +132,35 @@ export function buildMovements(ledger: LedgerEntry[], records: WalletRecord[]): 
 			...(best
 				? fromRecord(best)
 				: { status: 'success' as const, chain: null, address: null, txHash: null, viaBitget: false }),
+			eur: null,
+			source: 'ledger'
+		});
+	}
+
+	// Euro über das Bankkonto: Bitget bucht eine SEPA-Einzahlung direkt als Kauf (EUR → USDT/USDC),
+	// eine eigene EUR-Einzahlung gibt es in den Daten nicht. Verkauf gegen EUR entsprechend als Auszahlung.
+	for (const e of ledger) {
+		const sellEur = e.type === 'Trade' && e.sell_cur === 'EUR';
+		const buyEur = e.type === 'Trade' && e.buy_cur === 'EUR';
+		const apiFiat = e.type.startsWith('api:') && /FIAT/i.test(e.type);
+		if (!sellEur && !buyEur && !apiFiat) continue;
+		const isIn = sellEur || apiFiat;
+		out.push({
+			key: `f:${e.tx_id}`,
+			ts: e.ts,
+			bucket: 'external',
+			direction: isIn ? 'in' : 'out',
+			coin: asset((isIn ? e.buy_cur : e.sell_cur) ?? '?'),
+			amount: D(isIn ? e.buy_amount : e.sell_amount),
+			fee: e.fee_amount && !D(e.fee_amount).isZero() ? D(e.fee_amount) : null,
+			from: isIn ? 'Bank (EUR)' : account(e.exchange),
+			to: isIn ? account(e.exchange) : 'Bank (EUR)',
+			status: 'success',
+			chain: null,
+			address: null,
+			txHash: null,
+			viaBitget: false,
+			eur: sellEur ? D(e.sell_amount) : buyEur ? D(e.buy_amount) : null,
 			source: 'ledger'
 		});
 	}
@@ -150,6 +181,7 @@ export function buildMovements(ledger: LedgerEntry[], records: WalletRecord[]): 
 			from: isIn ? 'Extern' : 'Spot',
 			to: isIn ? 'Spot' : 'Extern',
 			...fromRecord(r),
+			eur: null,
 			source: 'record'
 		});
 	}
@@ -220,6 +252,7 @@ export function buildMovements(ledger: LedgerEntry[], records: WalletRecord[]): 
 			address: null,
 			txHash: null,
 			viaBitget: false,
+			eur: null,
 			source: 'ledger'
 		};
 	}

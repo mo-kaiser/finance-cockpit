@@ -74,6 +74,12 @@ describe('buildMovements', () => {
 		]);
 	});
 
+	it('zeigt Euro-Käufe als Einzahlung vom Bankkonto', () => {
+		const m = buildMovements([e({ type: 'Trade', buy_amount: '538', buy_cur: 'USDT', sell_amount: '500', sell_cur: 'EUR', comment: 'fiat_balance_success_user_in' })], []);
+		expect(m[0]).toMatchObject({ bucket: 'external', direction: 'in', coin: 'USDT', from: 'Bank (EUR)', to: 'Spot' });
+		expect(m[0]!.eur!.toString()).toBe('500');
+	});
+
 	it('kürzt Adressen', () => {
 		expect(shortAddr('0x1234567890abcdef1234')).toBe('0x1234…1234');
 		expect(shortAddr(null)).toBe('');
