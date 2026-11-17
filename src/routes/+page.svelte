@@ -7,6 +7,7 @@
 	import { computeTax } from '$lib/tax/engine';
 	import { FxTable } from '$lib/tax/fx';
 	import { ago, assessSync, berlin } from '$lib/monitor/health';
+	import { buildMovements, shortAddr, type Bucket } from '$lib/analysis/transfers';
 
 	let { data } = $props();
 
@@ -128,6 +129,21 @@
 	const D = (s: string) => new Decimal(s || 0);
 
 	const sync = $derived(data.syncRuns ? assessSync(data.syncRuns) : null);
+
+	// Ein- und Auszahlungen / Umbuchungen
+	const FILTERS: { key: Bucket | 'all'; label: string }[] = [
+		{ key: 'external', label: 'Ein-/Auszahlungen' },
+		{ key: 'internal', label: 'Umbuchungen' },
+		{ key: 'earn', label: 'Earn' },
+		{ key: 'all', label: 'Alle' }
+	];
+	let moveFilter = $state<Bucket | 'all'>('external');
+	let moveLimit = $state(15);
+	const movements = $derived(data.ledger ? buildMovements(data.ledger.ledger, data.wallet) : []);
+	const movesShown = $derived(moveFilter === 'all' ? movements : movements.filter((m) => m.bucket === moveFilter));
+	const pending = $derived(movements.filter((m) => m.status === 'pending'));
+	const DIR = { in: 'Eingang', out: 'Ausgang', move: 'Umbuchung' } as const;
+	const STATUS_LABEL = { success: 'erledigt', pending: 'ausstehend', failed: 'fehlgeschlagen' } as const;
 </script>
 
 <div class="page-head">
@@ -283,6 +299,62 @@
 	<p class="muted">Lade Bestände …</p>
 {/if}
 
+{#if data.ledger}
+	<section class="card" style="margin-top:16px">
+		<div class="head-row">
+			<div class="card-title">Ein- und Auszahlungen</div>
+			<div class="seg" role="group" aria-label="Art der Bewegung">
+				{#each FILTERS as f (f.key)}
+					<button aria-pressed={moveFilter === f.key} onclick={() => ((moveFilter = f.key), (moveLimit = 15))}>{f.label}</button>
+				{/each}
+			</div>
+		</div>
+		{#if pending.length}
+			<p class="small loss">{pending.length} {pending.length === 1 ? 'Bewegung ist' : 'Bewegungen sind'} noch ausstehend.</p>
+		{/if}
+		{#if data.walletError}<p class="error small">Ein-/Auszahlungsdaten: {data.walletError}</p>{/if}
+		{#if movesShown.length}
+			<div class="table-wrap">
+				<table>
+					<thead>
+						<tr><th>Zeit</th><th>Art</th><th class="num">Menge</th><th>Coin</th><th>Von → Nach</th><th>Netzwerk</th><th>Adresse / Tx</th><th>Status</th></tr>
+					</thead>
+					<tbody>
+						{#each movesShown.slice(0, moveLimit) as m (m.key)}
+							<tr>
+								<td class="small nowrap">{berlin(m.ts)}</td>
+								<td class={m.direction === 'in' ? 'gain' : m.direction === 'out' ? 'loss' : 'muted'}>{DIR[m.direction]}</td>
+								<td class="num">
+									{m.direction === 'out' ? '−' : m.direction === 'in' ? '+' : ''}{qty(m.amount, 8)}
+									{#if m.fee}<div class="note">Gebühr {qty(m.fee, 8)}</div>{/if}
+								</td>
+								<td><strong>{m.coin}</strong></td>
+								<td class="nowrap">{m.from} → {m.to}</td>
+								<td class="small">{m.viaBitget ? 'Bitget-intern' : (m.chain ?? '')}</td>
+								<td class="small mono">
+									{#if m.address}<span title={m.address}>{shortAddr(m.address)}</span>{/if}
+									{#if m.txHash}<div class="note" title={m.txHash}>Tx {shortAddr(m.txHash)}</div>{/if}
+								</td>
+								<td class="small {m.status === 'failed' ? 'loss' : m.status === 'pending' ? 'warn' : 'muted'}">{m.status ? STATUS_LABEL[m.status] : ''}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+			{#if movesShown.length > moveLimit}
+				<p><button class="ghost" onclick={() => (moveLimit += 25)}>Weitere anzeigen ({movesShown.length - moveLimit})</button></p>
+			{/if}
+		{:else}
+			<p class="muted small">Keine Bewegungen in dieser Auswahl.</p>
+		{/if}
+		<p class="small muted">
+			Aus den Kontobuchungen (CoinTracking-Import und täglicher Bitget-Abruf); Netzwerk, Adresse und Status aus Bitgets
+			Ein-/Auszahlungsdaten (rund ein Jahr zurück). Umbuchungen zwischen Bitget-Konten sind zu einer Zeile zusammengefasst; „?“
+			heißt, die Gegenbuchung ist nicht bekannt. Bitget kennt nur die Adresse, nicht die absendende Börse.
+		</p>
+	</section>
+{/if}
+
 <style>
 	.head-row {
 		display: flex;
@@ -322,6 +394,20 @@
 	}
 	.sync-error {
 		color: var(--loss);
+	}
+	.head-row .seg {
+		flex-wrap: wrap;
+		max-width: 100%;
+	}
+	.nowrap {
+		white-space: nowrap;
+	}
+	.mono {
+		font-family: var(--mono);
+	}
+	.warn {
+		color: var(--loss);
+		font-weight: 600;
 	}
 	.note {
 		font-family: var(--font);
