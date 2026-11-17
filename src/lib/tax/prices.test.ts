@@ -92,8 +92,20 @@ describe('computeTax mit Tageskursen', () => {
 		expect(bgb.costKnown.toString()).toBe('80');
 	});
 
+	it('bewertet Umtausch von Kleinstbeträgen in BGB (sonstiger Zugang) geschätzt über den Kurs', () => {
+		const r = computeTax(
+			[entry({ day: '2026-03-01', type: 'Other Income (non taxable)', comment: 'Exchange income', buy_amount: '2', buy_cur: 'BGB' })],
+			fx,
+			2026,
+			prices
+		);
+		expect(r.holdingsEnd[0]!.costKnown.toString()).toBe('8'); // 2 × 5 USD ÷ 1,25
+		expect(r.holdingsEnd[0]!.qtyCostUnknown.isZero()).toBe(true);
+	});
+
 	it('bewertet Einzahlungen von außen nicht über den Kurs', () => {
 		const r = computeTax([entry({ day: '2026-03-01', type: 'Deposit', comment: 'Deposit', buy_amount: '1', buy_cur: 'ETH' })], fx, 2026, prices);
 		expect(r.holdingsEnd[0]!.qtyCostUnknown.toString()).toBe('1');
+		expect(r.holdingsEnd[0]!.unknownBySource!.external_in!.toString()).toBe('1');
 	});
 });

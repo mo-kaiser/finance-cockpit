@@ -35,6 +35,15 @@ export interface PortfolioRow {
 	costNote: string | null;
 }
 
+/** Herkunft von Beständen ohne bekannte Kosten */
+const SOURCE_LABEL: Record<string, string> = {
+	external_in: 'aus Einzahlungen von außen',
+	other_in: 'aus sonstigen Zugängen',
+	earn_income: 'aus Earn ohne Tageskurs',
+	spot_trade: 'aus Tausch ohne Wert',
+	swap_nontaxable: 'aus Token-Umstellung'
+};
+
 const D = (s: string | undefined | null) => {
 	try {
 		return new Decimal(s && s !== '' ? s : 0);
@@ -104,7 +113,12 @@ export function buildPortfolio(
 		let costEur: Decimal | null = null;
 		let costNote: string | null = null;
 		if (!h) costNote = 'keine Anschaffung in den Daten';
-		else if (!h.qtyCostUnknown.isZero()) costNote = `${h.qtyCostUnknown.toSignificantDigits(6)} ohne bekannte Kosten`;
+		else if (!h.qtyCostUnknown.isZero()) {
+			const why = Object.entries(h.unknownBySource ?? {})
+				.map(([src, q]) => `${q!.toSignificantDigits(6)} ${SOURCE_LABEL[src] ?? src}`)
+				.join(', ');
+			costNote = `ohne bekannte Kosten: ${why || h.qtyCostUnknown.toSignificantDigits(6)}`;
+		}
 		else {
 			const diff = h.qty.sub(liveTotal).abs();
 			const tol = Decimal.max(liveTotal.mul('0.01'), new Decimal('0.000001'));

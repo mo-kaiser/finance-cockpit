@@ -324,6 +324,15 @@
 							</tr>
 						{/each}
 					</tbody>
+					<tfoot>
+						<tr>
+							<th>Summe</th>
+							<td></td>
+							<td class="num">{result.earn.reduce((n, r) => n + r.bookings, 0).toLocaleString('de-DE')}</td>
+							<td class="num"><strong>{eur(t.earnEurKnown)}</strong></td>
+							<td class="small {earnUnvalued ? 'error' : 'muted'}">{earnUnvalued ? 'ohne Coins ohne Tageskurs' : ''}</td>
+						</tr>
+					</tfoot>
 				</table>
 			</div>
 		</div>
