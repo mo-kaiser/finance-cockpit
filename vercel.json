@@ -1,6 +1,7 @@
 {
 	"crons": [
 		{ "path": "/api/cron/bitget", "schedule": "17 4 * * *" },
+		{ "path": "/api/cron/prices", "schedule": "47 4 * * *" },
 		{ "path": "/api/cron/watchdog", "schedule": "41 16 * * *" }
 	]
 }

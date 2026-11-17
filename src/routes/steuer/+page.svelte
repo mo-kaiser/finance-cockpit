@@ -4,6 +4,7 @@
 	import { clearLedgerCache } from '$lib/data/ledger';
 	import { computeTax, type DisposalStatus, type WarningKind } from '$lib/tax/engine';
 	import { FxTable } from '$lib/tax/fx';
+	import { PriceTable } from '$lib/tax/prices';
 	import { download, kapCsv, soCsv } from '$lib/tax/csv';
 
 	let { data } = $props();
@@ -13,7 +14,8 @@
 	let year = $state(Math.max(2026, thisYear));
 
 	const fx = $derived(new FxTable(data.fx));
-	const result = $derived(fx.size && data.ledger.length ? computeTax(data.ledger, fx, year) : null);
+	const priceTable = $derived(new PriceTable(data.prices));
+	const result = $derived(fx.size && data.ledger.length ? computeTax(data.ledger, fx, year, priceTable) : null);
 
 	let fxBusy = $state(false);
 	let fxMsg = $state('');
@@ -40,6 +42,9 @@
 	const sign = (d: Decimal | null) => (d === null || d.isZero() ? '' : d.isNeg() ? 'loss' : 'gain');
 
 	const FREIGRENZE_SO = new Decimal(1000);
+	/** § 22 Nr. 3 S. 2 EStG: Freigrenze für alle Einkünfte aus Leistungen zusammen */
+	const FREIGRENZE_22 = new Decimal(256);
+	const earnUnvalued = $derived(result ? result.earn.filter((r) => !r.qtyUnvalued.isZero()).length : 0);
 
 	const months = $derived.by(() => {
 		if (!result) return [];
@@ -70,6 +75,8 @@
 	const WARN: Record<WarningKind, string> = {
 		fx_missing: 'EZB-Kurs fehlt',
 		trade_unvalued: 'Tausch ohne EUR-Wert',
+		trade_priced: 'Tausch über Tageskurs geschätzt',
+		earn_unvalued: 'Earn ohne Tageskurs',
 		fee_other_currency: 'Gebühr in dritter Währung',
 		external_in: 'Einzahlung von außen',
 		external_out: 'Auszahlung nach außen',
@@ -149,7 +156,11 @@
 		<div class="card tile">
 			<div class="label">Earn · Zinsen und Boni</div>
 			<div class="value">{eur(t.earnEurKnown)}</div>
-			<div class="muted small">nur Stablecoins bewertet – folgt</div>
+			<div class="muted small">
+				{#if earnUnvalued}{earnUnvalued} {earnUnvalued === 1 ? 'Coin' : 'Coins'} ohne Tageskurs – Summe unvollständig
+				{:else if t.earnEurKnown.lte(FREIGRENZE_22)}unter der Freigrenze von 256 €
+				{:else}Freigrenze von 256 € überschritten – voll steuerpflichtig{/if}
+			</div>
 		</div>
 	</div>
 
@@ -159,6 +170,7 @@
 			<li>USDT und USDC werden 1:1 als US-Dollar bewertet und mit dem EZB-Referenzkurs des Tages in Euro umgerechnet (Wochenende/Feiertag: letzter Kurs davor).</li>
 			<li>Perpetual Futures gelten als Termingeschäfte (§ 20 Abs. 2 S. 1 Nr. 3 EStG); das BMF-Schreiben vom 06.03.2025 regelt sie nicht ausdrücklich.</li>
 			<li>Spot: FIFO je Coin über alle Bitget-Konten, Haltefrist ein Jahr (§ 23 EStG). Auch Käufe mit USDT sind Veräußerungen von USDT.</li>
+			<li>Earn-Erträge und Tausch Coin gegen Coin werden mit dem Bitget-Tagesschlusskurs (USDT, UTC-Tageskerze) des Zuflusstags bewertet, umgerechnet mit dem EZB-Kurs. Der Wert eines Zinsertrags ist zugleich die Anschaffungskosten des Zins-Bestands.</li>
 			<li>Gebühren im gekauften Coin mindern die erhaltene Menge, Gebühren im verkauften Coin erhöhen die abgegebene Menge.</li>
 			<li>Auszahlungen nach außen gelten als Übertrag auf eine eigene Wallet (nicht steuerbar).</li>
 			<li>Zeiten in Europe/Berlin. Engine-Version {result.engineVersion}.</li>
@@ -288,21 +300,27 @@
 	{/if}
 
 	<section>
-		<h2>Earn {year} (Vorschau)</h2>
+		<h2>Earn {year} – sonstige Einkünfte (§ 22 Nr. 3 EStG)</h2>
 		<div class="card">
 			<p class="muted small">
-				Zinsen und Boni sind Einkünfte nach § 22 Nr. 3 EStG (Freigrenze 256 €). Bewertet sind bisher nur Stablecoins; für BTC, ETH, BGB usw. fehlen noch Tageskurse.
+				Zinsen, Staking, Airdrops und Boni, bewertet am Zuflusstag (Stablecoins über den EZB-Kurs, andere Coins über den
+				Bitget-Tagesschlusskurs). Die Freigrenze von 256 € gilt für alle Einkünfte nach § 22 Nr. 3 zusammen – auch solche
+				außerhalb des Cockpits. Wird sie überschritten, ist der gesamte Betrag steuerpflichtig.
+				{#if data.pricesError}<br /><span class="error">Tageskurse nicht geladen: {data.pricesError}</span>{/if}
 			</p>
 			<div class="table-wrap">
 				<table>
-					<thead><tr><th>Coin</th><th class="num">Menge</th><th class="num">Buchungen</th><th class="num">EUR</th></tr></thead>
+					<thead><tr><th>Coin</th><th class="num">Menge</th><th class="num">Buchungen</th><th class="num">EUR am Zuflusstag</th><th>Hinweis</th></tr></thead>
 					<tbody>
 						{#each result.earn as r (r.asset)}
 							<tr>
 								<td>{r.asset}</td>
 								<td class="num">{num(r.qty)}</td>
 								<td class="num">{r.bookings.toLocaleString('de-DE')}</td>
-								<td class="num">{r.qtyUnvalued.isZero() ? eur(r.eurKnown) : '–'}</td>
+								<td class="num">{r.eurKnown.isZero() && !r.qtyUnvalued.isZero() ? '–' : eur(r.eurKnown)}</td>
+								<td class="small {r.qtyUnvalued.isZero() ? 'muted' : 'error'}">
+									{#if !r.qtyUnvalued.isZero()}{num(r.qtyUnvalued)} {r.asset} ohne Tageskurs{:else if !r.eurPriced.isZero()}Tageskurs{:else}Stablecoin{/if}
+								</td>
 							</tr>
 						{/each}
 					</tbody>

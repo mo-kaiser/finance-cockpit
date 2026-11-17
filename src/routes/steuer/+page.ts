@@ -9,12 +9,14 @@ export const load: PageLoad = async ({ parent, depends }) => {
 	const { supabase } = await parent();
 	try {
 		const d = await loadLedger(supabase);
-		return { ledger: d.ledger, fx: d.fx, sources: d.sources, loadError: null };
+		return { ledger: d.ledger, fx: d.fx, prices: d.prices, pricesError: d.pricesError, sources: d.sources, loadError: null };
 	} catch (e) {
 		clearLedgerCache();
 		return {
 			ledger: [],
 			fx: [],
+			prices: [],
+			pricesError: null as string | null,
 			sources: { cointracking: 0, api: 0, apiLast: null as string | null },
 			loadError: (e as Error).message
 		};

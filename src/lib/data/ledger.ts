@@ -1,11 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { mapApiLedger, type ApiLedgerRow } from '$lib/tax/bitget-api';
 import type { FxRow } from '$lib/tax/fx';
+import type { PriceSeriesRow } from '$lib/tax/prices';
 import type { LedgerEntry } from '$lib/tax/types';
 
 export interface LedgerData {
 	ledger: LedgerEntry[];
 	fx: FxRow[];
+	/** Tageskurse je Coin (leer, solange noch keine geladen sind) */
+	prices: PriceSeriesRow[];
+	pricesError: string | null;
 	sources: { cointracking: number; api: number; apiLast: string | null };
 	loadedAt: number;
 }
@@ -34,6 +38,13 @@ export function loadLedger(db: SupabaseClient, force = false): Promise<LedgerDat
 	if (!force && inflight) return inflight;
 
 	inflight = (async () => {
+		// Kurse getrennt: ein Fehler (z. B. Tabelle noch nicht angelegt) soll den Rest nicht blockieren
+		const pricesP = db
+			.from('v_coin_prices')
+			.select('coin, first_day, last_day, n, prices')
+			.eq('quote', 'USDT')
+			.eq('source', 'bitget')
+			.then(({ data, error }) => ({ rows: (data ?? []) as PriceSeriesRow[], error: error?.message ?? null }));
 		const [ct, api, fx] = await Promise.all([
 			pages<LedgerEntry>((a, b) => db.from('v_ledger').select('*').order('ts').order('tx_id').range(a, b), 'CoinTracking-Daten'),
 			pages<ApiLedgerRow>((a, b) => db.from('v_api_ledger').select('*').order('ts').order('tx_id').range(a, b), 'Bitget-API-Daten'),
@@ -43,9 +54,12 @@ export function loadLedger(db: SupabaseClient, force = false): Promise<LedgerDat
 			)
 		]);
 		const apiEntries = mapApiLedger(api);
+		const pr = await pricesP;
 		cache = {
 			ledger: [...ct, ...apiEntries],
 			fx,
+			prices: pr.rows,
+			pricesError: pr.error,
 			sources: { cointracking: ct.length, api: apiEntries.length, apiLast: api.length ? api[api.length - 1]!.ts : null },
 			loadedAt: Date.now()
 		};

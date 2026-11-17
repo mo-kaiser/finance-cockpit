@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { onMount } from 'svelte';
 	import { ago, assessSync, berlin } from '$lib/monitor/health';
+	import { loadLedger } from '$lib/data/ledger';
+	import { neededPriceCoins } from '$lib/tax/prices';
 
 	let { data, form } = $props();
 
@@ -64,6 +67,107 @@
 			backupMsg = '';
 		}
 		backupBusy = false;
+	}
+
+	// Tageskurse je Coin: Abdeckung prüfen und fehlende Kurse Coin für Coin nachladen
+	interface PriceRow {
+		coin: string;
+		needed: string;
+		first: string | null;
+		last: string | null;
+		n: number;
+		state: 'ok' | 'fehlt' | 'luecke' | 'veraltet' | 'nicht_bei_bitget' | 'ab_listing';
+	}
+	let priceRows = $state<PriceRow[]>([]);
+	let priceErr = $state('');
+	let priceBusy = $state(false);
+	let priceLog = $state<string[]>([]);
+	// Coins ohne Bitget-Kurse merken (nur in diesem Browser), damit sie nicht jedes Mal als „fehlt“ erscheinen
+	const KEY = 'cockpit.prices.unavailable';
+	const readSet = (k: string) => {
+		try {
+			return new Set<string>(JSON.parse(localStorage.getItem(k) ?? '[]'));
+		} catch {
+			return new Set<string>();
+		}
+	};
+	const saveSet = (k: string, v: Set<string>) => {
+		try {
+			localStorage.setItem(k, JSON.stringify([...v]));
+		} catch {
+			/* ohne Speicher geht es auch */
+		}
+	};
+	const unavailable = readSet(KEY);
+	const listedLater = readSet(`${KEY}.later`);
+	const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+	const plusDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+	async function loadPriceStatus(force = false) {
+		priceErr = '';
+		try {
+			const d = await loadLedger(data.supabase, force);
+			if (d.pricesError) priceErr = `Tageskurse: ${d.pricesError}`;
+			const have = new Map(d.prices.map((p) => [p.coin, p]));
+			priceRows = [...neededPriceCoins(d.ledger)]
+				.map(([coin, needed]) => {
+					const p = have.get(coin);
+					const first = p?.first_day ?? null;
+					const last = p?.last_day ?? null;
+					let state: PriceRow['state'] = 'ok';
+					if (!p) state = unavailable.has(coin) ? 'nicht_bei_bitget' : 'fehlt';
+					else if (first! > plusDays(needed, 3)) state = listedLater.has(coin) ? 'ab_listing' : 'luecke';
+					else if (last! < plusDays(yesterday, -2)) state = 'veraltet';
+					return { coin, needed, first, last, n: p?.n ?? 0, state };
+				})
+				.sort((a, b) => (a.state === 'ok' ? 1 : 0) - (b.state === 'ok' ? 1 : 0) || a.coin.localeCompare(b.coin));
+		} catch (e) {
+			priceErr = (e as Error).message;
+		}
+	}
+	onMount(() => void loadPriceStatus());
+
+	const priceTodo = $derived(priceRows.filter((r) => r.state === 'fehlt' || r.state === 'luecke' || r.state === 'veraltet'));
+	const PRICE_STATE: Record<PriceRow['state'], string> = {
+		ok: 'vollständig',
+		fehlt: 'fehlt',
+		luecke: 'Anfang fehlt',
+		veraltet: 'nicht aktuell',
+		nicht_bei_bitget: 'nicht bei Bitget',
+		ab_listing: 'ab Bitget-Listing'
+	};
+
+	async function syncPrices() {
+		priceBusy = true;
+		priceLog = [];
+		const todo = [...priceTodo];
+		for (const [i, r] of todo.entries()) {
+			// Anfang fehlt / ganz neu: ab Erstauftreten; sonst ab dem letzten vorhandenen Tag
+			const from = r.state === 'veraltet' ? plusDays(r.last!, 1) : r.needed;
+			priceLog = [`${i + 1}/${todo.length} ${r.coin} …`, ...priceLog.slice(0, 40)];
+			try {
+				const res = await fetch('/api/prices/sync', {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ coin: r.coin, from })
+				});
+				const b = await res.json().catch(() => ({}));
+				if (!res.ok) throw new Error(b.message ?? `HTTP ${res.status}`);
+				if (b.unavailable) unavailable.add(r.coin);
+				else if (b.first && b.first > plusDays(r.needed, 3)) listedLater.add(r.coin);
+				priceLog[0] = b.unavailable
+					? `${r.coin}: nicht bei Bitget`
+					: b.error
+						? `${r.coin}: Fehler – ${b.error}`
+						: `${r.coin}: ${b.received} Tage (${b.first ?? '–'} bis ${b.last ?? '–'}), ${b.stored} neu`;
+			} catch (e) {
+				priceLog[0] = `${r.coin}: Fehler – ${(e as Error).message}`;
+			}
+		}
+		saveSet(KEY, unavailable);
+		saveSet(`${KEY}.later`, listedLater);
+		await loadPriceStatus(true);
+		priceBusy = false;
 	}
 
 	const STATUS: Record<string, string> = { done: 'erfolgreich', failed: 'fehlgeschlagen', running: 'läuft' };
@@ -257,6 +361,54 @@
 				</table>
 			</div>
 		</details>
+	{/if}
+</div>
+
+<div class="card" style="margin-top:16px">
+	<h2 style="margin-top:0">Tageskurse je Coin</h2>
+	<p class="muted small">
+		Bitget-Tagesschlusskurse (USDT) für jeden Coin ab dem Tag, an dem er zum ersten Mal in den Buchungen vorkommt.
+		Gebraucht für Earn-Erträge am Zuflusstag, Tausch Coin gegen Coin und den Einstand von Zins-Beständen. Neue Tage
+		lädt ein täglicher Abruf; die Historie einmalig hier.
+	</p>
+	{#if priceErr}<p class="error small">{priceErr}</p>{/if}
+	{#if priceRows.length}
+		{@const ok = priceRows.filter((r) => r.state === 'ok' || r.state === 'ab_listing').length}
+		{@const na = priceRows.filter((r) => r.state === 'nicht_bei_bitget').length}
+		<p>
+			<strong>{ok}</strong> von {priceRows.length} Coins mit Kursen{#if na}{' · '}{na} nicht bei Bitget{/if}{#if priceTodo.length}{' · '}<span class="error">{priceTodo.length} unvollständig</span>{/if}
+		</p>
+		<p>
+			<button onclick={syncPrices} disabled={priceBusy || !priceTodo.length}>
+				{priceBusy ? 'Lade …' : priceTodo.length ? `Fehlende Kurse laden (${priceTodo.length} Coins)` : 'Alle Kurse vorhanden'}
+			</button>
+		</p>
+		{#each priceLog as l, i (i)}<p class="small" style="margin:2px 0">{l}</p>{/each}
+		<details>
+			<summary><span>Alle Coins</span></summary>
+			<div class="table-wrap">
+				<table>
+					<thead><tr><th>Coin</th><th>benötigt ab</th><th>Kurse von – bis</th><th class="num">Tage</th><th>Status</th></tr></thead>
+					<tbody>
+						{#each priceRows as r (r.coin)}
+							<tr>
+								<td><strong>{r.coin}</strong></td>
+								<td class="small">{r.needed}</td>
+								<td class="small">{r.first ? `${r.first} – ${r.last}` : '–'}</td>
+								<td class="num">{r.n ? r.n.toLocaleString('de-DE') : ''}</td>
+								<td class="small {r.state === 'ok' ? 'ok' : r.state === 'nicht_bei_bitget' || r.state === 'ab_listing' ? 'muted' : 'error'}">{PRICE_STATE[r.state]}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		</details>
+		<p class="muted small">
+			„Nicht bei Bitget“: kein USDT-Handelspaar (meist kleine, delistete Airdrop-Token) – deren Erträge bleiben unbewertet
+			und erscheinen auf der Steuer-Seite als Hinweis.
+		</p>
+	{:else if !priceErr}
+		<p class="muted small">Lade Buchungen …</p>
 	{/if}
 </div>
 

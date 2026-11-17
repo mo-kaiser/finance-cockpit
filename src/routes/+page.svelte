@@ -6,6 +6,7 @@
 	import { money, pct, qty, tone } from '$lib/format';
 	import { computeTax } from '$lib/tax/engine';
 	import { FxTable } from '$lib/tax/fx';
+	import { PriceTable } from '$lib/tax/prices';
 	import { ago, assessSync, berlin } from '$lib/monitor/health';
 	import { buildMovements, shortAddr, type Bucket } from '$lib/analysis/transfers';
 
@@ -32,7 +33,8 @@
 	});
 
 	// Einstand aus der FIFO-Rechnung über die gesamte Historie
-	const tax = $derived(data.ledger && fx.size ? computeTax(data.ledger.ledger, fx, 'all') : null);
+	const priceTable = $derived(new PriceTable(data.ledger?.prices ?? []));
+	const tax = $derived(data.ledger && fx.size ? computeTax(data.ledger.ledger, fx, 'all', priceTable) : null);
 
 	const portfolio = $derived(
 		data.live
