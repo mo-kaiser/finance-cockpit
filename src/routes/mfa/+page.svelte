@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto, refreshAll } from '$app/navigation';
 	import { onMount } from 'svelte';
 
 	let { data } = $props();
@@ -58,7 +58,7 @@
 			code = '';
 			return;
 		}
-		await invalidateAll();
+		await refreshAll();
 		await goto('/');
 	}
 </script>

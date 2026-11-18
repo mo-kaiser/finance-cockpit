@@ -1,7 +1,7 @@
-import { loadLedger } from '$lib/data/ledger';
-import type { LiveData } from '$lib/analysis/portfolio';
-import type { SyncRun } from '$lib/monitor/health';
-import type { WalletRecord } from '$lib/analysis/transfers';
+import { loadLedger } from '#lib/data/ledger.ts';
+import type { LiveData } from '#lib/analysis/portfolio.ts';
+import type { SyncRun } from '#lib/monitor/health.ts';
+import type { WalletRecord } from '#lib/analysis/transfers.ts';
 import type { PageLoad } from './$types';
 
 export const ssr = false;

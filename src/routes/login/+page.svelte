@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto, refreshAll } from '$app/navigation';
 
 	let { data } = $props();
 	let email = $state('');
@@ -17,7 +17,7 @@
 			error = `Anmeldung fehlgeschlagen: ${err.message}${err.code ? ` (${err.code})` : ''}`;
 			return;
 		}
-		await invalidateAll();
+		await refreshAll();
 		await goto('/mfa');
 	}
 </script>

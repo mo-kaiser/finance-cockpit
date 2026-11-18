@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { onMount } from 'svelte';
-	import { ago, assessSync, berlin } from '$lib/monitor/health';
-	import { clearLedgerCache, loadLedger } from '$lib/data/ledger';
-	import { neededPriceCoins } from '$lib/tax/prices';
+	import { ago, assessSync, berlin } from '#lib/monitor/health.ts';
+	import { clearLedgerCache, loadLedger } from '#lib/data/ledger.ts';
+	import { neededPriceCoins } from '#lib/tax/prices.ts';
 
 	let { data, form } = $props();
 

@@ -1,10 +1,10 @@
 import Decimal from 'decimal.js';
-import { asset, FIAT_EUR, USD_STABLE } from '$lib/tax/assets';
-import { classify } from '$lib/tax/classify';
-import { computeTax } from '$lib/tax/engine';
-import type { FxTable } from '$lib/tax/fx';
-import type { PriceTable } from '$lib/tax/prices';
-import type { LedgerEntry } from '$lib/tax/types';
+import { asset, FIAT_EUR, USD_STABLE } from '#lib/tax/assets.ts';
+import { classify } from '#lib/tax/classify.ts';
+import { computeTax } from '#lib/tax/engine.ts';
+import type { FxTable } from '#lib/tax/fx.ts';
+import type { PriceTable } from '#lib/tax/prices.ts';
+import type { LedgerEntry } from '#lib/tax/types.ts';
 
 /**
  * Wertverlauf des Portfolios: Bestand je Coin am Ende jedes Tages (aus der Buchungshistorie, alle Bitget-Konten)

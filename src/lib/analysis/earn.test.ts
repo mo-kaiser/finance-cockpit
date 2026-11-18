@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import Decimal from 'decimal.js';
 import { describe, expect, it } from 'vitest';
-import { parseCoinTrackingCsv } from '$lib/import/cointracking';
-import { ledgerFromCt } from '$lib/tax/ledger-from-ct';
-import type { LedgerEntry } from '$lib/tax/types';
+import { parseCoinTrackingCsv } from '#lib/import/cointracking.ts';
+import { ledgerFromCt } from '#lib/tax/ledger-from-ct.ts';
+import type { LedgerEntry } from '#lib/tax/types.ts';
 import { earnEvents, realizedApr, summarizeEarn } from './earn';
 
 const e = (p: Partial<LedgerEntry> & { day: string; type: string; buy_amount: string; buy_cur: string }): LedgerEntry => ({

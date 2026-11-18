@@ -1,5 +1,5 @@
 import { error, json } from '@sveltejs/kit';
-import { bitgetGet, bitgetPublic, BitgetError } from '$lib/server/bitget';
+import { bitgetGet, bitgetPublic, BitgetError } from '#lib/server/bitget.ts';
 import type { RequestHandler } from './$types';
 
 export const config = { maxDuration: 30 };

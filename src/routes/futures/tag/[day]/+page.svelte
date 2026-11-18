@@ -1,10 +1,10 @@
 <script lang="ts">
 	import Decimal from 'decimal.js';
 	import { page } from '$app/state';
-	import LineChart from '$lib/components/LineChart.svelte';
-	import { futuresEvents, futuresStats, inRange, type Currency } from '$lib/analysis/futures';
-	import { dayLabel, money, pct, qty, tone } from '$lib/format';
-	import { FxTable } from '$lib/tax/fx';
+	import LineChart from '#lib/components/LineChart.svelte';
+	import { futuresEvents, futuresStats, inRange, type Currency } from '#lib/analysis/futures.ts';
+	import { dayLabel, money, pct, qty, tone } from '#lib/format.ts';
+	import { FxTable } from '#lib/tax/fx.ts';
 
 	let { data } = $props();
 

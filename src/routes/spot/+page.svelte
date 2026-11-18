@@ -1,12 +1,12 @@
 <script lang="ts">
 	import Decimal from 'decimal.js';
-	import LineChart from '$lib/components/LineChart.svelte';
-	import { buildPortfolio } from '$lib/analysis/portfolio';
-	import { money, qty, tone } from '$lib/format';
-	import { USD_STABLE } from '$lib/tax/assets';
-	import { computeTax, type Disposal } from '$lib/tax/engine';
-	import { FxTable } from '$lib/tax/fx';
-	import { PriceTable } from '$lib/tax/prices';
+	import LineChart from '#lib/components/LineChart.svelte';
+	import { buildPortfolio } from '#lib/analysis/portfolio.ts';
+	import { money, qty, tone } from '#lib/format.ts';
+	import { USD_STABLE } from '#lib/tax/assets.ts';
+	import { computeTax, type Disposal } from '#lib/tax/engine.ts';
+	import { FxTable } from '#lib/tax/fx.ts';
+	import { PriceTable } from '#lib/tax/prices.ts';
 
 	let { data } = $props();
 

@@ -1,14 +1,14 @@
 <script lang="ts">
 	import Decimal from 'decimal.js';
 	import { invalidate } from '$app/navigation';
-	import { onChainStaked, reconcile } from '$lib/analysis/reconcile';
-	import { clearLedgerCache, berlinDay } from '$lib/data/ledger';
-	import { money, qty } from '$lib/format';
-	import { USD_STABLE } from '$lib/tax/assets';
-	import { computeTax } from '$lib/tax/engine';
-	import { FxTable } from '$lib/tax/fx';
-	import { PriceTable } from '$lib/tax/prices';
-	import { OPENING_TYPE } from '$lib/tax/types';
+	import { onChainStaked, reconcile } from '#lib/analysis/reconcile.ts';
+	import { clearLedgerCache, berlinDay } from '#lib/data/ledger.ts';
+	import { money, qty } from '#lib/format.ts';
+	import { USD_STABLE } from '#lib/tax/assets.ts';
+	import { computeTax } from '#lib/tax/engine.ts';
+	import { FxTable } from '#lib/tax/fx.ts';
+	import { PriceTable } from '#lib/tax/prices.ts';
+	import { OPENING_TYPE } from '#lib/tax/types.ts';
 
 	let { data } = $props();
 

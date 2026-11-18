@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
-import { classify } from '$lib/tax/classify';
-import type { FxTable } from '$lib/tax/fx';
-import type { LedgerEntry } from '$lib/tax/types';
+import { classify } from '#lib/tax/classify.ts';
+import type { FxTable } from '#lib/tax/fx.ts';
+import type { LedgerEntry } from '#lib/tax/types.ts';
 
 export type Currency = 'USDT' | 'EUR';
 export type EventKind = 'pnl' | 'fee' | 'funding' | 'other';

@@ -2,10 +2,10 @@
 	import Decimal from 'decimal.js';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import LineChart from '$lib/components/LineChart.svelte';
-	import { futuresEvents, futuresStats, inRange, type Bucket, type Currency } from '$lib/analysis/futures';
-	import { MONTHS, WEEKDAYS, money, pct, ratio, tone } from '$lib/format';
-	import { FxTable } from '$lib/tax/fx';
+	import LineChart from '#lib/components/LineChart.svelte';
+	import { futuresEvents, futuresStats, inRange, type Bucket, type Currency } from '#lib/analysis/futures.ts';
+	import { MONTHS, WEEKDAYS, money, pct, ratio, tone } from '#lib/format.ts';
+	import { FxTable } from '#lib/tax/fx.ts';
 
 	let { data } = $props();
 
@@ -20,9 +20,9 @@
 	const period = $derived((page.url.searchParams.get('p') as 'monat' | 'jahr' | 'gesamt' | null) ?? 'jahr');
 
 	function setParam(k: string, v: string) {
-		const u = new URL(page.url);
+		const u = new URL(page.url.href); // page.url ist schreibgeschützt
 		u.searchParams.set(k, v);
-		goto(u, { replaceState: true, noScroll: true, keepFocus: true });
+		goto(u, { replace: true, reset: false });
 	}
 
 	function shiftMonth(delta: number) {

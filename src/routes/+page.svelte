@@ -1,18 +1,18 @@
 <script lang="ts">
 	import Decimal from 'decimal.js';
 	import { invalidate } from '$app/navigation';
-	import { futuresEvents, futuresStats, inRange } from '$lib/analysis/futures';
-	import { buildPortfolio, type Account } from '$lib/analysis/portfolio';
-	import { money, pct, qty, tone } from '$lib/format';
-	import { computeTax } from '$lib/tax/engine';
-	import { FxTable } from '$lib/tax/fx';
-	import { PriceTable } from '$lib/tax/prices';
-	import { onChainStaked } from '$lib/analysis/reconcile';
-	import { valueHistory, type ValuePoint } from '$lib/analysis/history';
-	import { USD_STABLE } from '$lib/tax/assets';
-	import LineChart from '$lib/components/LineChart.svelte';
-	import { ago, assessSync, berlin } from '$lib/monitor/health';
-	import { buildMovements, shortAddr, type Bucket } from '$lib/analysis/transfers';
+	import { futuresEvents, futuresStats, inRange } from '#lib/analysis/futures.ts';
+	import { buildPortfolio, type Account } from '#lib/analysis/portfolio.ts';
+	import { money, pct, qty, tone } from '#lib/format.ts';
+	import { computeTax } from '#lib/tax/engine.ts';
+	import { FxTable } from '#lib/tax/fx.ts';
+	import { PriceTable } from '#lib/tax/prices.ts';
+	import { onChainStaked } from '#lib/analysis/reconcile.ts';
+	import { valueHistory, type ValuePoint } from '#lib/analysis/history.ts';
+	import { USD_STABLE } from '#lib/tax/assets.ts';
+	import LineChart from '#lib/components/LineChart.svelte';
+	import { ago, assessSync, berlin } from '#lib/monitor/health.ts';
+	import { buildMovements, shortAddr, type Bucket } from '#lib/analysis/transfers.ts';
 
 	let { data } = $props();
 

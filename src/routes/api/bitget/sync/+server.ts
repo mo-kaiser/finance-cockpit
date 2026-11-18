@@ -1,7 +1,7 @@
 import { error, json } from '@sveltejs/kit';
-import { BitgetError } from '$lib/server/bitget';
-import { earliestStart, endpointByKey, fetchWindow, storeRecords } from '$lib/server/bitget-sync';
-import { supabaseAdmin } from '$lib/server/supabase-admin';
+import { BitgetError } from '#lib/server/bitget.ts';
+import { earliestStart, endpointByKey, fetchWindow, storeRecords } from '#lib/server/bitget-sync.ts';
+import { supabaseAdmin } from '#lib/server/supabase-admin.ts';
 import type { RequestHandler } from './$types';
 
 export const config = { maxDuration: 60 };

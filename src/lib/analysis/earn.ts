@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
-import { asset, USD_STABLE } from '$lib/tax/assets';
-import { classify } from '$lib/tax/classify';
-import type { LedgerEntry } from '$lib/tax/types';
+import { asset, USD_STABLE } from '#lib/tax/assets.ts';
+import { classify } from '#lib/tax/classify.ts';
+import type { LedgerEntry } from '#lib/tax/types.ts';
 
 export type EarnKind = 'zinsen' | 'airdrop' | 'bonus';
 

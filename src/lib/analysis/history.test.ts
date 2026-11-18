@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { FxTable } from '$lib/tax/fx';
-import { PriceTable } from '$lib/tax/prices';
-import type { LedgerEntry } from '$lib/tax/types';
+import { FxTable } from '#lib/tax/fx.ts';
+import { PriceTable } from '#lib/tax/prices.ts';
+import type { LedgerEntry } from '#lib/tax/types.ts';
 import { valueHistory } from './history';
 
 let n = 0;

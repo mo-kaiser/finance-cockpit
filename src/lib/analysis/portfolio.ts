@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js';
-import type { Holding } from '$lib/tax/engine';
+import type { Holding } from '#lib/tax/engine.ts';
 
 export type Account = 'spot' | 'earn' | 'futures';
 type Section<T> = { ok: true; data: T } | { ok: false; error: string };

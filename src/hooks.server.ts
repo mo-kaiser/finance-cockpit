@@ -1,9 +1,9 @@
+import { redirect } from '@sveltejs/kit';
 import { createServerClient } from '@supabase/ssr';
-import { redirect, type Handle } from '@sveltejs/kit';
-import { sequence } from '@sveltejs/kit/hooks';
-import { dev } from '$app/environment';
-import { env as privateEnv } from '$env/dynamic/private';
-import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from '$lib/supabase-config';
+import { sequence, type Handle } from '@sveltejs/kit/hooks';
+import { dev } from '$app/env';
+import { COCKPIT_DEMO } from '$app/env/private';
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from '#lib/supabase-config.ts';
 import type { AuthClaims } from './app';
 
 /** Seiten, die ohne Login erreichbar sind. */
@@ -27,7 +27,7 @@ const supabase: Handle = async ({ event, resolve }) => {
 	let cached: Promise<AuthClaims | null> | undefined;
 	// Nur lokal (vite dev) mit COCKPIT_DEMO=1: Ansicht ohne Login für Tests mit Beispieldaten.
 	// `dev` ist im Produktivbuild fest false, dieser Zweig existiert dort nicht.
-	if (dev && privateEnv.COCKPIT_DEMO === '1') {
+	if (dev && COCKPIT_DEMO === '1') {
 		event.locals.getClaims = async () => ({ sub: '00000000-0000-0000-0000-000000000000', aal: 'aal2' });
 		return resolve(event);
 	}

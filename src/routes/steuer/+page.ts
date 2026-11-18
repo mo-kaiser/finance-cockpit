@@ -1,4 +1,4 @@
-import { clearLedgerCache, loadLedger } from '$lib/data/ledger';
+import { clearLedgerCache, loadLedger } from '#lib/data/ledger.ts';
 import type { PageLoad } from './$types';
 
 // Berechnung läuft im Browser

@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { env } from '$env/dynamic/private';
+import { BITGET_API_KEY, BITGET_API_SECRET, BITGET_API_PASSPHRASE } from '$app/env/private';
 
 const BASE = 'https://api.bitget.com';
 
@@ -14,7 +14,7 @@ export class BitgetError extends Error {
 }
 
 export function bitgetConfigured() {
-	return Boolean(env.BITGET_API_KEY && env.BITGET_API_SECRET && env.BITGET_API_PASSPHRASE);
+	return Boolean(BITGET_API_KEY && BITGET_API_SECRET && BITGET_API_PASSPHRASE);
 }
 
 /**
@@ -31,19 +31,19 @@ export async function bitgetGet<T = unknown>(path: string, params: Record<string
 	).toString();
 	const requestPath = query ? `${path}?${query}` : path;
 	const ts = Date.now().toString();
-	const sign = createHmac('sha256', env.BITGET_API_SECRET!).update(ts + 'GET' + requestPath).digest('base64');
+	const sign = createHmac('sha256', BITGET_API_SECRET!).update(ts + 'GET' + requestPath).digest('base64');
 
 	const res = await fetch(BASE + requestPath, {
 		headers: {
-			'ACCESS-KEY': env.BITGET_API_KEY!,
+			'ACCESS-KEY': BITGET_API_KEY!,
 			'ACCESS-SIGN': sign,
 			'ACCESS-TIMESTAMP': ts,
-			'ACCESS-PASSPHRASE': env.BITGET_API_PASSPHRASE!,
+			'ACCESS-PASSPHRASE': BITGET_API_PASSPHRASE!,
 			'Content-Type': 'application/json',
 			locale: 'en-US'
 		}
 	});
-	const body = (await res.json().catch(() => null)) as { code?: string; msg?: string; data?: T } | null;
+	const body = await res.json().catch(() => null) as { code?: string; msg?: string; data?: T } | null;
 	if (!res.ok || !body || body.code !== '00000') {
 		throw new BitgetError(body?.msg ?? `HTTP ${res.status}`, res.status, body?.code);
 	}
@@ -54,7 +54,7 @@ export async function bitgetGet<T = unknown>(path: string, params: Record<string
 export async function bitgetPublic<T = unknown>(path: string, params: Record<string, string | number> = {}): Promise<T> {
 	const query = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString();
 	const res = await fetch(BASE + path + (query ? `?${query}` : ''));
-	const body = (await res.json().catch(() => null)) as { code?: string; msg?: string; data?: T } | null;
+	const body = await res.json().catch(() => null) as { code?: string; msg?: string; data?: T } | null;
 	if (!res.ok || !body || body.code !== '00000') {
 		throw new BitgetError(body?.msg ?? `HTTP ${res.status}`, res.status, body?.code);
 	}
