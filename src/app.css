@@ -20,6 +20,7 @@
 	--side-active: #263129;
 	--chart-1: #1f6f4a;
 	--chart-2: #c0392b;
+	--chart-3: #2563eb;
 	--chart-grid: rgba(0, 0, 0, 0.06);
 	--radius: 12px;
 	--font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -48,6 +49,7 @@
 		--side-active: #1f2722;
 		--chart-1: #4ade80;
 		--chart-2: #f87171;
+		--chart-3: #60a5fa;
 		--chart-grid: rgba(255, 255, 255, 0.07);
 		color-scheme: dark;
 	}

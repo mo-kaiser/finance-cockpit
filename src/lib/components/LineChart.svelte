@@ -40,7 +40,7 @@
 						label
 					},
 					...(values2
-						? [{ data: values2, borderColor: css('--muted'), borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, tension: 0, fill: false, label: label2 }]
+						? [{ data: values2, borderColor: css('--chart-3') || css('--muted'), borderWidth: 2, borderDash: [6, 4], pointRadius: 0, tension: 0, fill: false, label: label2 }]
 						: [])
 				]
 			},
