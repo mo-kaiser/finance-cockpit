@@ -1,6 +1,6 @@
 # Roadmap
 
-Stand: 17.11.2026. Reihenfolge = Empfehlung.
+Stand: 18.11.2026. Reihenfolge = Empfehlung.
 
 ## 1. Absicherung (zuerst)
 
@@ -13,7 +13,7 @@ Stand: 17.11.2026. Reihenfolge = Empfehlung.
 
 ## 2. Daten vervollständigen
 
-- [x] **Tageskurse je Coin** (öffentliche Bitget-Kerzen, 17.11.2026 auf staging; 42 von 73 Coins, 31 delistete Airdrop-Token ohne Kurs)
+- [x] **Tageskurse je Coin** (öffentliche Bitget-Kerzen, live seit 18.11.2026; 42 von 73 Coins, 31 delistete Airdrop-Token ohne Kurs)
   - Earn-Bewertung: Einkünfte § 22 Nr. 3 EStG, Freigrenze 256 €
   - Anschaffungskosten der Zins-Bestände → Einstand und unrealisiert vollständig
   - [ ] Wertverlauf des Portfolios
@@ -24,7 +24,10 @@ Stand: 17.11.2026. Reihenfolge = Empfehlung.
 - [ ] **Steuerschätzung / Rücklage**: KAP-Saldo und SO-Ergebnis → grobe Steuerlast (Abgeltungsteuer, Soli, ggf. Kirchensteuer, Sparerpauschbetrag), klar als Schätzung gekennzeichnet
 - [ ] **Trading-Journal Futures**: Positionen aus Fills rekonstruieren (ab ca. 09/2025) – Eröffnung bis Schließung, Haltedauer, Ø-Preise, Gebühren und Funding je Position; Notizen und Tags je Trade (Setup, ICT-Konzept, Sitzung, Fehler) mit Auswertung je Tag
 - [ ] **Kostenanalyse**: Funding und Gebühren je Position/Haltedauer, Maker/Taker-Anteil im Zeitverlauf, Ersparnis bei Maker-Ausführung (Historie: Funding −900 USDT vs. Gebühren −161 USDT)
-- [ ] **Prüfliste abhaken & Korrekturen**: Warnungen auf der Steuer-Seite als „geprüft“ markieren; fehlende Anschaffungsdaten (z. B. DOT, MINA) über eine Maske nachtragen (`manual_adjustments`); für Einzahlungen von außen echtes Kaufdatum und Kosten je Einzahlung (ohne Eintrag gilt Einzahlungstag + Tageswert, geschätzt – Entscheidung Mo 17.11.)
+- [ ] **Prüfliste abhaken & Korrekturen**
+  - [x] Seite `/korrekturen` mit Abgleich Bitget ↔ Buchungen und Anfangsbestand (live seit 18.11.2026); eingetragen: BGB, GRIMACE, ZRX (Kauf vor 08/2023, Tageswert geschätzt)
+  - [ ] Einzahlungen von außen: echtes Kaufdatum und Kosten je Einzahlung (ohne Eintrag gilt Einzahlungstag + Tageswert, geschätzt – Entscheidung Mo 17.11.)
+  - [ ] Warnungen auf der Steuer-Seite als „geprüft“ markieren
 - [ ] **Jahresabschluss 2026** (Januar 2027): eingefrorener Snapshot (`report_snapshots`) und PDF für Steuererklärung / Steuerberater
 
 ## 4. KuCoin per API (Mo möchte das bald nachziehen; liefert Kaufdaten für Überweisungen KuCoin → Bitget)
