@@ -47,6 +47,12 @@ export const BACKUP_TABLES: BackupTable[] = [
 		owned: true
 	},
 	{ name: 'ticker_map', select: 'source,source_ticker,asset,note', order: ['source', 'source_ticker'], owned: false },
+	{
+		name: 'coin_prices',
+		select: 'coin,price_date,close::text,quote,source,fetched_at',
+		order: ['coin', 'price_date', 'quote', 'source'],
+		owned: false
+	},
 	{ name: 'fx_rates', select: 'rate_date,pair,rate::text,source,fetched_at', order: ['rate_date', 'pair', 'source'], owned: false }
 ];
 

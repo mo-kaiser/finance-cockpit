@@ -30,7 +30,7 @@ const load = (t) => {
 	return read(join(data, `${t}.ndjson.gz`));
 };
 // Reihenfolge wegen Fremdschlüsseln
-const ORDER = ['ticker_map', 'fx_rates', 'imports', 'ct_rows', 'api_records', 'manual_adjustments', 'report_snapshots'];
+const ORDER = ['ticker_map', 'fx_rates', 'coin_prices', 'imports', 'ct_rows', 'api_records', 'manual_adjustments', 'report_snapshots'];
 const backup = {};
 for (const t of ORDER) backup[t] = existsSync(join(data, t)) || existsSync(join(data, `${t}.ndjson.gz`)) ? load(t) : [];
 

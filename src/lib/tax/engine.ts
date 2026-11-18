@@ -2,11 +2,12 @@ import Decimal from 'decimal.js';
 import { asset, FIAT_EUR, USD_STABLE } from './assets';
 import { classify, isKap } from './classify';
 import type { FxTable } from './fx';
+import type { PriceTable } from './prices';
 import type { Category, LedgerEntry } from './types';
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
-export const ENGINE_VERSION = 'engine-0.1';
+export const ENGINE_VERSION = 'engine-0.2';
 
 const ZERO = new Decimal(0);
 
@@ -68,6 +69,8 @@ export interface EarnRow {
 	asset: string;
 	qty: Decimal;
 	eurKnown: Decimal;
+	/** Teil von eurKnown, der über den Coin-Tageskurs (nicht Stablecoin) bewertet ist */
+	eurPriced: Decimal;
 	qtyUnvalued: Decimal;
 	bookings: number;
 }
@@ -75,6 +78,8 @@ export interface EarnRow {
 export type WarningKind =
 	| 'fx_missing'
 	| 'trade_unvalued'
+	| 'trade_priced'
+	| 'earn_unvalued'
 	| 'fee_other_currency'
 	| 'external_in'
 	| 'external_out'
@@ -97,6 +102,10 @@ export interface Holding {
 	qty: Decimal;
 	costKnown: Decimal;
 	qtyCostUnknown: Decimal;
+	/** Menge ohne bekannte Kosten nach Herkunft (z. B. external_in = Einzahlung von außen) */
+	unknownBySource?: Partial<Record<Category, Decimal>>;
+	/** Menge mit geschätzten Kosten (z. B. Einzahlung von außen zum Tageswert) */
+	qtyEstimated?: Decimal;
 }
 
 export interface TaxResult {
@@ -135,7 +144,12 @@ export function holdingEnd(acquiredDay: string): string {
 	return `${y}-${md}`;
 }
 
-export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'all'): TaxResult {
+/**
+ * @param prices Tageskurse je Coin (optional). Damit werden Earn-Erträge in Coins wie BTC/ETH am Zuflusstag
+ *   bewertet (§ 22 Nr. 3, zugleich Anschaffungskosten des Zins-Bestands) und Tausch Coin gegen Coin
+ *   mit dem Tagesschlusskurs geschätzt.
+ */
+export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'all', prices?: PriceTable): TaxResult {
 	const yStart = year === 'all' ? '0000-01-01' : `${year}-01-01`;
 	const yEnd = year === 'all' ? '9999-12-31' : `${year}-12-31`;
 	const inYear = (day: string) => day >= yStart && day <= yEnd;
@@ -167,6 +181,13 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 			return v;
 		}
 		return null;
+	};
+
+	/** EUR-Wert eines Coins über den Tagesschlusskurs (USDT) und den EZB-Kurs, oder null. */
+	const priceEur = (cur: string, qty: Decimal, day: string): Decimal | null => {
+		if (!prices || cur === FIAT_EUR || USD_STABLE.has(cur)) return null;
+		const usdt = prices.valueUsdt(cur, qty, day);
+		return usdt === null ? null : fx.usdToEur(usdt, day);
 	};
 
 	const acquire = (a: string, qty: Decimal, cost: Decimal | null, e: LedgerEntry, cat: Category, estimated = false) => {
@@ -262,13 +283,20 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 				let qty = ZERO;
 				let costKnown = ZERO;
 				let qtyCostUnknown = ZERO;
+				const unknownBySource: Partial<Record<Category, Decimal>> = {};
+				let qtyEstimated = ZERO;
 				for (let i = p.head; i < p.lots.length; i++) {
 					const l = p.lots[i]!;
 					qty = qty.add(l.qty);
-					if (l.cost === null) qtyCostUnknown = qtyCostUnknown.add(l.qty);
-					else costKnown = costKnown.add(l.cost);
+					if (l.cost === null) {
+						qtyCostUnknown = qtyCostUnknown.add(l.qty);
+						unknownBySource[l.source] = (unknownBySource[l.source] ?? ZERO).add(l.qty);
+					} else {
+						costKnown = costKnown.add(l.cost);
+						if (l.estimated) qtyEstimated = qtyEstimated.add(l.qty);
+					}
 				}
-				return { asset: a, qty, costKnown, qtyCostUnknown };
+				return { asset: a, qty, costKnown, qtyCostUnknown, unknownBySource, qtyEstimated };
 			})
 			.filter((h) => h.qty.gt(0))
 			.sort((a, b) => b.costKnown.cmp(a.costKnown));
@@ -323,11 +351,18 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 				if (Sc === FIAT_EUR || Bc === FIAT_EUR) value = Sc === FIAT_EUR ? S : netBuy;
 				else if (USD_STABLE.has(Sc)) value = valueEur(Sc, S, e.day, e);
 				else if (USD_STABLE.has(Bc)) value = valueEur(Bc, netBuy, e.day, e);
+				// Tausch Coin gegen Coin: Wert über den Tagesschlusskurs der abgegebenen, sonst der erhaltenen Seite
+				let priced = false;
+				if (value === null) {
+					value = priceEur(Sc, dispQty, e.day) ?? priceEur(Bc, netBuy, e.day);
+					priced = value !== null;
+					if (priced) warn({ kind: 'trade_priced', day: e.day, txId: e.tx_id, asset: `${Sc}→${Bc}`, note: 'Tausch Coin gegen Coin, Wert über den Tagesschlusskurs geschätzt' });
+				}
 				if (value === null) {
 					warn({ kind: 'trade_unvalued', day: e.day, txId: e.tx_id, asset: `${Sc}→${Bc}`, note: 'Tausch ohne Euro- oder Stablecoin-Seite, EUR-Wert fehlt' });
 				}
 				dispose(Sc, dispQty, value, Bc, e);
-				acquire(Bc, netBuy, value, e, cat);
+				acquire(Bc, netBuy, value, e, cat, priced);
 				if (Fc && Fc !== Bc && Fc !== Sc) {
 					consume(Fc, F, e);
 					warn({ kind: 'fee_other_currency', day: e.day, txId: e.tx_id, asset: Fc, qty: F, note: 'Gebühr in dritter Währung, als Abgang ohne Erlös gebucht' });
@@ -340,19 +375,36 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 			case 'external_in': {
 				if (!Bc) break;
 				const qty = Fc === Bc ? B.sub(F) : B;
-				const value = USD_STABLE.has(Bc) || Bc === FIAT_EUR ? valueEur(Bc, qty, e.day, e) : null;
-				acquire(Bc, qty, value, e, cat, cat === 'external_in' && value !== null);
+				const stable = USD_STABLE.has(Bc) || Bc === FIAT_EUR;
+				// Earn-Erträge in Coins: Wert am Zuflusstag = Einkünfte § 22 Nr. 3 und Anschaffungskosten des Bestands.
+				// Sonstige Zugänge (bei Bitget v. a. Umtausch von Kleinstbeträgen in BGB, „Exchange income“) und
+				// Einzahlungen von außen: Kosten = Marktwert am Tag, als geschätzt markiert. Bei Einzahlungen gilt
+				// der Einzahlungstag als Kaufdatum, solange keine Korrektur (echtes Kaufdatum/Kosten) nachgetragen ist.
+				const coinValue = !stable ? priceEur(Bc, qty, e.day) : null;
+				const value = stable ? valueEur(Bc, qty, e.day, e) : coinValue;
+				acquire(Bc, qty, value, e, cat, (cat === 'external_in' || cat === 'other_in') && value !== null);
 				if (cat === 'earn_income' && inYear(e.day)) {
-					const r = earn.get(Bc) ?? { asset: Bc, qty: ZERO, eurKnown: ZERO, qtyUnvalued: ZERO, bookings: 0 };
+					const r = earn.get(Bc) ?? { asset: Bc, qty: ZERO, eurKnown: ZERO, eurPriced: ZERO, qtyUnvalued: ZERO, bookings: 0 };
 					r.qty = r.qty.add(qty);
+					if (coinValue) r.eurPriced = r.eurPriced.add(coinValue);
 					if (value) r.eurKnown = r.eurKnown.add(value);
 					else r.qtyUnvalued = r.qtyUnvalued.add(qty);
 					r.bookings += e.n;
 					earn.set(Bc, r);
 				}
 				if (cat === 'external_in') {
-					warn({ kind: 'external_in', day: e.day, txId: e.tx_id, asset: Bc, qty, note: value ? 'Stablecoin-Einzahlung, Kosten zum Tageswert geschätzt' : 'Einzahlung von außen, Anschaffungsdaten fehlen' });
+					warn({ kind: 'external_in', day: e.day, txId: e.tx_id, asset: Bc, qty, note: value ? 'Einzahlung von außen: Kaufdatum = Einzahlungstag, Kosten = Tageswert (geschätzt)' : 'Einzahlung von außen ohne Tageskurs, Anschaffungsdaten fehlen' });
 				}
+				break;
+			}
+
+			case 'opening_in': {
+				// Nachgetragener Anfangsbestand (Kauf vor Beginn der Historie): angegebene Kosten,
+				// sonst Tageswert am angegebenen Datum – dann als geschätzt markiert.
+				if (!Bc) break;
+				const known = e.cost_eur != null && e.cost_eur !== '' ? new Decimal(e.cost_eur) : null;
+				const value = known ?? (USD_STABLE.has(Bc) ? valueEur(Bc, B, e.day, e) : priceEur(Bc, B, e.day));
+				acquire(Bc, B, value, e, cat, known === null && value !== null);
 				break;
 			}
 
@@ -386,6 +438,19 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 
 	holdingsStart ??= snapshotHoldings();
 	const holdingsEnd = snapshotHoldings();
+
+	// Earn ohne Tageskurs: ein Hinweis je Coin statt je Buchung
+	for (const r of earn.values()) {
+		if (r.qtyUnvalued.isZero()) continue;
+		warnings.push({
+			kind: 'earn_unvalued',
+			day: year === 'all' ? '' : `${year}`,
+			txId: `earn:${r.asset}`,
+			asset: r.asset,
+			qty: r.qtyUnvalued,
+			note: prices?.has(r.asset) ? 'Erträge an Tagen ohne Tageskurs' : 'Kein Tageskurs für diesen Coin (z. B. nicht bei Bitget gehandelt)'
+		});
+	}
 
 	const sum = (xs: (Decimal | null)[]) => xs.reduce<Decimal>((s, x) => (x ? s.add(x) : s), ZERO);
 	const kapOf = (c: Category) => kap.filter((k) => k.category === c);

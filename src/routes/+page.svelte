@@ -6,6 +6,8 @@
 	import { money, pct, qty, tone } from '$lib/format';
 	import { computeTax } from '$lib/tax/engine';
 	import { FxTable } from '$lib/tax/fx';
+	import { PriceTable } from '$lib/tax/prices';
+	import { onChainStaked } from '$lib/analysis/reconcile';
 	import { ago, assessSync, berlin } from '$lib/monitor/health';
 	import { buildMovements, shortAddr, type Bucket } from '$lib/analysis/transfers';
 
@@ -32,7 +34,8 @@
 	});
 
 	// Einstand aus der FIFO-Rechnung über die gesamte Historie
-	const tax = $derived(data.ledger && fx.size ? computeTax(data.ledger.ledger, fx, 'all') : null);
+	const priceTable = $derived(new PriceTable(data.ledger?.prices ?? []));
+	const tax = $derived(data.ledger && fx.size ? computeTax(data.ledger.ledger, fx, 'all', priceTable) : null);
 
 	const portfolio = $derived(
 		data.live
@@ -40,7 +43,8 @@
 					data.live,
 					eurPerUsdt,
 					tax?.holdingsEnd ?? [],
-					new Set(account === 'all' ? (['spot', 'earn', 'futures'] as Account[]) : [account])
+					new Set(account === 'all' ? (['spot', 'earn', 'futures'] as Account[]) : [account]),
+					data.ledger ? onChainStaked(data.ledger.ledger, data.live) : undefined
 				)
 			: null
 	);
@@ -232,7 +236,11 @@
 							<td class="num">{r.price ? qty(r.price, r.price.lt(1) ? 6 : 2) : '–'}</td>
 							<td class="num"><strong>{money(r.valueEur, 'EUR')}</strong></td>
 							<td class="num muted">{pct(r.share)}</td>
-							<td class="num" title={r.costNote ?? ''}>{r.costEur ? money(r.costEur, 'EUR') : '–'}</td>
+							<td class="num" title={r.costNote ?? ''}>
+								{r.costEur ? money(r.costEur, 'EUR') : '–'}
+								{#if r.costEur && r.covered}<div class="note">für {Math.round(r.covered * 100)} % des Bestands</div>
+								{:else if r.costEur && r.costNote?.includes('geschätzt')}<div class="note">teils geschätzt</div>{/if}
+							</td>
 							<td class="num {tone(r.unrealizedEur)}" title={r.costNote ?? ''}>
 								{#if r.unrealizedEur}{money(r.unrealizedEur, 'EUR', { sign: true })}{:else}<span class="note">{r.costNote ? (r.costNote.includes('ohne bekannte') ? 'Einstand teils unbekannt' : r.costNote.startsWith('Historie') ? 'Bestand ≠ Historie' : r.costNote) : '–'}</span>{/if}
 							</td>

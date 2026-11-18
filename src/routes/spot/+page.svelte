@@ -6,11 +6,13 @@
 	import { USD_STABLE } from '$lib/tax/assets';
 	import { computeTax, type Disposal } from '$lib/tax/engine';
 	import { FxTable } from '$lib/tax/fx';
+	import { PriceTable } from '$lib/tax/prices';
 
 	let { data } = $props();
 
 	const fx = $derived(new FxTable(data.ledger?.fx ?? []));
-	const tax = $derived(data.ledger && fx.size ? computeTax(data.ledger.ledger, fx, 'all') : null);
+	const priceTable = $derived(new PriceTable(data.ledger?.prices ?? []));
+	const tax = $derived(data.ledger && fx.size ? computeTax(data.ledger.ledger, fx, 'all', priceTable) : null);
 
 	let year = $state<string>('alle');
 	let withStable = $state(false);
