@@ -16,7 +16,7 @@ Stand: 18.11.2026. Reihenfolge = Empfehlung.
 - [x] **Tageskurse je Coin** (öffentliche Bitget-Kerzen, live seit 18.11.2026; 42 von 73 Coins, 31 delistete Airdrop-Token ohne Kurs)
   - Earn-Bewertung: Einkünfte § 22 Nr. 3 EStG, Freigrenze 256 €
   - Anschaffungskosten der Zins-Bestände → Einstand und unrealisiert vollständig
-  - [ ] Wertverlauf des Portfolios
+  - [x] Wertverlauf des Portfolios (live seit 18.11.2026, PR #8)
 
 ## 3. Inhaltliche Erweiterungen
 

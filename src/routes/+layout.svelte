@@ -3,10 +3,13 @@
 	import { invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
+	import LoadingIndicator from '$lib/components/LoadingIndicator.svelte';
 
 	let { data, children } = $props();
 
 	onMount(() => {
+		// Ladehinweis aus app.html entfernen, sobald die Seite steht
+		document.getElementById('boot-loader')?.remove();
 		const { data: sub } = data.supabase.auth.onAuthStateChange(() => {
 			invalidate('supabase:auth');
 		});
@@ -31,6 +34,8 @@
 <svelte:head>
 	<title>Cockpit</title>
 </svelte:head>
+
+<LoadingIndicator />
 
 {#if showNav}
 	<div class="app">
