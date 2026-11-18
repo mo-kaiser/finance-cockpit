@@ -14,6 +14,9 @@ export const variables = defineEnvVars({
 	BITGET_API_KEY: { schema: (input) => input ?? '' },
 	BITGET_API_SECRET: { schema: (input) => input ?? '' },
 	BITGET_API_PASSPHRASE: { schema: (input) => input ?? '' },
+	KUCOIN_API_KEY: { schema: (input) => input ?? '' },
+	KUCOIN_API_SECRET: { schema: (input) => input ?? '' },
+	KUCOIN_API_PASSPHRASE: { schema: (input) => input ?? '' },
 	SUPABASE_SECRET_KEY: { schema: (input) => input ?? '' },
 	VERCEL_ENV: { schema: (input) => input ?? '' }
 });

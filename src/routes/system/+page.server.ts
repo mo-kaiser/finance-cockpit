@@ -1,7 +1,8 @@
 import * as env from '$app/env/private';
 import { bitgetGet, BitgetError } from '#lib/server/bitget.ts';
 import { supabaseAdmin } from '#lib/server/supabase-admin.ts';
-import { ENDPOINTS } from '#lib/server/bitget-sync.ts';
+import { ENDPOINTS, KUCOIN_ENDPOINTS } from '#lib/server/bitget-sync.ts';
+import { kucoinConfigured, kucoinGet, type KucoinError } from '#lib/server/kucoin.ts';
 import { sendAlert } from '#lib/server/alert.ts';
 import type { SyncRun } from '#lib/monitor/health.ts';
 import type { Actions, PageServerLoad } from './$types';
@@ -10,6 +11,9 @@ const VARS = [
 	'BITGET_API_KEY',
 	'BITGET_API_SECRET',
 	'BITGET_API_PASSPHRASE',
+	'KUCOIN_API_KEY',
+	'KUCOIN_API_SECRET',
+	'KUCOIN_API_PASSPHRASE',
 	'SUPABASE_SECRET_KEY',
 	'CRON_SECRET',
 	'RESEND_API_KEY',
@@ -40,7 +44,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		syncRuns: (runs ?? []) as SyncRun[],
 		syncRunsError: runsErr?.message ?? null,
 		vercelEnv: env.VERCEL_ENV || 'lokal',
-		endpoints: ENDPOINTS.map((e) => ({ key: e.key, label: e.label, windowDays: e.windowDays, maxDays: e.maxDays, role: e.role }))
+		kucoin: kucoinConfigured(),
+		endpoints: [...ENDPOINTS, ...(kucoinConfigured() ? KUCOIN_ENDPOINTS : [])].map((e) => ({ key: e.key, label: e.label, windowDays: e.windowDays, maxDays: e.maxDays, role: e.role }))
 	};
 };
 
@@ -73,6 +78,28 @@ export const actions: Actions = {
 		} catch(e) {
 			const err = e as BitgetError;
 			return { bitget: { ok: false, error: `${err.message}${err.code ? ` (Code ${err.code})` : ''}` } };
+		}
+	},
+	kucoin: async () => {
+		try {
+			// Infos zum API-Key: Rechte und IP-Freigabe
+			const info = await kucoinGet<{ remark?: string; permission?: string; ipWhitelist?: string; uid?: number }>('/api/v1/user/api-key');
+			const perms = (info.permission ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+			const risky = perms.filter((p) => !/^general$/i.test(p));
+			const accounts = await kucoinGet<{ currency: string; type: string; balance: string }[]>('/api/v1/accounts');
+			const withBalance = accounts.filter((a) => Number(a.balance) > 0);
+			return {
+				kucoin: {
+					ok: true,
+					permissions: perms,
+					risky,
+					ip: info.ipWhitelist ?? '',
+					accounts: withBalance.map((a) => `${a.currency} (${a.type})`)
+				}
+			};
+		} catch (e) {
+			const err = e as KucoinError;
+			return { kucoin: { ok: false, error: `${err.message}${err.code ? ` (Code ${err.code})` : ''}` } };
 		}
 	},
 	supabase: async () => {

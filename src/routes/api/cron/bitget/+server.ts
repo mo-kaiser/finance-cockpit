@@ -4,6 +4,7 @@ import { CRON_SECRET } from '$app/env/private';
 import {
 	DAY_MS,
 	ENDPOINTS,
+	KUCOIN_ENDPOINTS,
 	fetchWindow,
 	ownerId,
 	storeRecords,
@@ -11,6 +12,7 @@ import {
 } from '#lib/server/bitget-sync.ts';
 
 import { sendAlert } from '#lib/server/alert.ts';
+import { kucoinConfigured } from '#lib/server/kucoin.ts';
 import { supabaseAdmin } from '#lib/server/supabase-admin.ts';
 import type { RequestHandler } from './$types';
 
@@ -43,7 +45,7 @@ export const GET: RequestHandler = async ({ request }) => {
 		const end = Date.now();
 		const start = end - LOOKBACK_DAYS * DAY_MS;
 
-		for (const ep of ENDPOINTS) {
+		for (const ep of [...ENDPOINTS, ...(kucoinConfigured() ? KUCOIN_ENDPOINTS : [])]) {
 			try {
 				let received = 0;
 				let stored = 0;

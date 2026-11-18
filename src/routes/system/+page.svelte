@@ -449,6 +449,23 @@
 		{/if}
 	{/if}
 
+	<form method="POST" action="?/kucoin" use:enhance style="margin-top:16px">
+		<button type="submit" disabled={!data.kucoin}>KuCoin-Key testen</button>
+		{#if !data.kucoin}<span class="muted small"> – erst die KUCOIN_API_…-Variablen in Vercel anlegen</span>{/if}
+	</form>
+	{#if form?.kucoin}
+		{#if form.kucoin.ok}
+			<p class="ok">Verbindung zu KuCoin erfolgreich.</p>
+			<p>Rechte des Keys: <code>{form.kucoin.permissions?.join(', ') || '–'}</code></p>
+			{#if form.kucoin.risky?.length}
+				<p class="error">Achtung: Der Key hat mehr als „General“ ({form.kucoin.risky.join(', ')}). Bitte in KuCoin auf „General“ beschränken.</p>
+			{/if}
+			<p class="small muted">Konten mit Guthaben: {form.kucoin.accounts?.join(', ') || 'keine'}</p>
+		{:else}
+			<p class="error">KuCoin: {form.kucoin.error}</p>
+		{/if}
+	{/if}
+
 	<form method="POST" action="?/supabase" use:enhance style="margin-top:16px">
 		<button type="submit">Supabase Secret Key testen</button>
 	</form>
@@ -511,7 +528,7 @@
 </div>
 
 <div class="card" style="margin-top:16px">
-	<h2 style="margin-top:0">Bitget-Daten nachladen</h2>
+	<h2 style="margin-top:0">Börsen-Daten nachladen {data.kucoin ? '(Bitget und KuCoin)' : '(Bitget)'}</h2>
 	<p class="muted small">
 		Holt neue Buchungen sofort, statt auf den täglichen Abruf zu warten – z. B. nach einem Futures-Trade. Bereits vorhandene
 		Datensätze werden übersprungen, mehrfaches Nachladen schadet also nicht. Für den Alltag reicht „Letzte 2 Tage“; ein

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { bitgetGet } from './bitget';
+import { kucoinPaged } from './kucoin';
 
 const DAY = 86_400_000;
 
@@ -25,6 +26,12 @@ export interface EndpointDef {
 	nextCursor: (data: unknown, items: Item[]) => string | undefined;
 	idField: string;
 	timeField: string;
+	/** Börse (api_records.source), Standard 'bitget' */
+	source?: 'bitget' | 'kucoin';
+	/** Eigener Abruf eines Zeitfensters (andere Börse/Paginierung) statt Bitget-Cursor */
+	fetchWindow?: (start: number, end: number) => Promise<Item[]>;
+	/** ID aus dem Datensatz bilden, wenn es kein eindeutiges ID-Feld gibt */
+	makeId?: (raw: Item) => string | null;
 }
 
 const arr = (x: unknown): Item[] => (Array.isArray(x) ? (x as Item[]) : []);
@@ -110,10 +117,73 @@ export const ENDPOINTS: EndpointDef[] = [
 	}
 ];
 
-export const endpointByKey = (k: string) => ENDPOINTS.find((e) => e.key === k);
+export const endpointByKey = (k: string) => ENDPOINTS.find((e) => e.key === k) ?? KUCOIN_ENDPOINTS.find((e) => e.key === k);
+
+const KC_DAY = 86_400_000;
+/**
+ * KuCoin (global): Kontobuchungen aller klassischen Konten (Main/Trade, inkl. Earn-Zinsen), Ein- und Auszahlungen.
+ * Kontobuchungen: höchstens 24 h je Anfrage, Historie 1 Jahr (KuCoin-Doku 11/2026). Ein-/Auszahlungen: Fenster
+ * vorsichtshalber 7 Tage, Reichweite laut Export ebenfalls 1 Jahr.
+ */
+export const KUCOIN_ENDPOINTS: EndpointDef[] = [
+	{
+		key: 'kucoin_ledgers',
+		label: 'KuCoin: Kontobuchungen',
+		source: 'kucoin',
+		path: '/api/v1/accounts/ledgers',
+		params: {},
+		limit: 500,
+		windowDays: 1,
+		maxDays: 364,
+		role: 'ledger',
+		list: arr,
+		nextCursor: () => undefined,
+		idField: 'id',
+		timeField: 'createdAt',
+		fetchWindow: (start, end) => kucoinPaged('/api/v1/accounts/ledgers', { startAt: start, endAt: Math.min(end, start + KC_DAY) })
+	},
+	{
+		key: 'kucoin_deposits',
+		label: 'KuCoin: Einzahlungen',
+		source: 'kucoin',
+		refresh: true,
+		path: '/api/v1/deposits',
+		params: {},
+		limit: 500,
+		windowDays: 7,
+		maxDays: 364,
+		role: 'detail',
+		list: arr,
+		nextCursor: () => undefined,
+		idField: 'id',
+		timeField: 'createdAt',
+		// ältere Datensätze haben teils keine id → Tx-Hash bzw. Zeit + Coin + Menge
+		makeId: (r) => (r.id ? String(r.id) : r.walletTxId ? `tx:${r.walletTxId}` : `${r.createdAt}:${r.currency}:${r.amount}`),
+		fetchWindow: (start, end) => kucoinPaged('/api/v1/deposits', { startAt: start, endAt: end }, 100)
+	},
+	{
+		key: 'kucoin_withdrawals',
+		label: 'KuCoin: Auszahlungen',
+		source: 'kucoin',
+		refresh: true,
+		path: '/api/v1/withdrawals',
+		params: {},
+		limit: 500,
+		windowDays: 7,
+		maxDays: 364,
+		role: 'detail',
+		list: arr,
+		nextCursor: () => undefined,
+		idField: 'id',
+		timeField: 'createdAt',
+		makeId: (r) => (r.id ? String(r.id) : r.walletTxId ? `tx:${r.walletTxId}` : `${r.createdAt}:${r.currency}:${r.amount}`),
+		fetchWindow: (start, end) => kucoinPaged('/api/v1/withdrawals', { startAt: start, endAt: end }, 100)
+	}
+];
 
 /** Alle Datensätze eines Zeitfensters (paginiert über idLessThan). */
 export async function fetchWindow(ep: EndpointDef, start: number, end: number, maxPages = 50): Promise<Item[]> {
+	if (ep.fetchWindow) return ep.fetchWindow(start, end);
 	const out: Item[] = [];
 	let cursor: string | undefined;
 	for (let page = 0; page < maxPages; page++) {
@@ -160,13 +230,13 @@ export async function storeRecords(
 	let stored = 0;
 	const rows = items
 		.map((raw) => {
-			const id = raw[ep.idField];
+			const id = ep.makeId ? ep.makeId(raw) : raw[ep.idField];
 			const t = Number(raw[ep.timeField]);
 			if (id === undefined || id === null || !Number.isFinite(t)) return null;
 			return {
 				user_id: userId,
 				import_id: importId,
-				source: 'bitget',
+				source: ep.source ?? 'bitget',
 				endpoint: ep.key,
 				record_id: String(id),
 				ts: new Date(t).toISOString(),
