@@ -2,7 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { onMount } from 'svelte';
 	import { ago, assessSync, berlin } from '$lib/monitor/health';
-	import { loadLedger } from '$lib/data/ledger';
+	import { clearLedgerCache, loadLedger } from '$lib/data/ledger';
 	import { neededPriceCoins } from '$lib/tax/prices';
 
 	let { data, form } = $props();
@@ -210,7 +210,9 @@
 	};
 
 	// Nachladen: alle Fenster einer Schnittstelle seit einem Datum
-	let syncFrom = $state('2026-01-01');
+	// Standard: ab gestern – deckt den heutigen Berliner Tag sicher ab (Bitget rechnet in UTC)
+	const berlinDate = (ms: number) => new Date(ms).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
+	let syncFrom = $state(berlinDate(Date.now() - 86_400_000));
 	let syncLog = $state<string[]>([]);
 	let syncing = $state(false);
 
@@ -264,7 +266,8 @@
 		liveBusy = false;
 	}
 
-	async function syncAll() {
+	async function syncAll(from?: string) {
+		if (from) syncFrom = from;
 		syncing = true;
 		syncLog = [];
 		const endMs = Date.now();
@@ -293,6 +296,8 @@
 			const from = new Date(startMs).toISOString().slice(0, 10);
 			syncLog = [...syncLog, `${ep.label} (ab ${from}): ${received} abgerufen, ${stored} neu gespeichert${err ? ` – abgebrochen bei ${err}` : ''}`];
 		}
+		// Neue Buchungen sofort auf allen Seiten sichtbar machen (sonst bis zu 5 Minuten Zwischenspeicher)
+		clearLedgerCache();
 		syncing = false;
 	}
 </script>
@@ -508,12 +513,17 @@
 <div class="card" style="margin-top:16px">
 	<h2 style="margin-top:0">Bitget-Daten nachladen</h2>
 	<p class="muted small">
-		Lädt alle Schnittstellen ab dem Datum und speichert die Rohdaten unverändert. Bereits vorhandene Datensätze werden
-		übersprungen. Der tägliche Abruf läuft später automatisch (nur auf Production).
+		Holt neue Buchungen sofort, statt auf den täglichen Abruf zu warten – z. B. nach einem Futures-Trade. Bereits vorhandene
+		Datensätze werden übersprungen, mehrfaches Nachladen schadet also nicht. Für den Alltag reicht „Letzte 2 Tage“; ein
+		früheres Datum nur, wenn der tägliche Abruf länger ausgefallen ist.
 	</p>
-	<label for="from">Ab</label>
-	<input id="from" type="date" bind:value={syncFrom} style="max-width:200px" disabled={syncing} />
-	<p><button onclick={syncAll} disabled={syncing}>{syncing ? 'Lade …' : 'Nachladen'}</button></p>
+	<p><button onclick={() => syncAll(berlinDate(Date.now() - 86_400_000))} disabled={syncing}>{syncing ? 'Lade …' : 'Letzte 2 Tage nachladen'}</button></p>
+	<details>
+		<summary><span>Ab einem bestimmten Datum</span></summary>
+		<label for="from">Ab</label>
+		<input id="from" type="date" bind:value={syncFrom} style="max-width:200px" disabled={syncing} />
+		<p><button class="ghost" onclick={() => syncAll()} disabled={syncing}>Nachladen ab {syncFrom}</button></p>
+	</details>
 	{#each syncLog as l, i (i)}<p class="small">{l}</p>{/each}
 </div>
 
