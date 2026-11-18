@@ -97,6 +97,8 @@ export interface Warning {
 	asset?: string;
 	qty?: Decimal;
 	note: string;
+	/** Börse der Buchung */
+	venue?: Venue;
 }
 
 export interface Holding {
@@ -181,7 +183,7 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 	let holdingsStart: Holding[] | null = null;
 
 	const warn = (w: Warning) => {
-		if (inYear(w.day)) warnings.push(w);
+		if (inYear(w.day)) warnings.push({ venue: curVenue, ...w });
 	};
 
 	/** EUR-Wert eines Betrags, sofern die Währung EUR oder ein USD-Stablecoin ist. */
@@ -362,6 +364,7 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 			track(a, q);
 			warn({
 				kind: 'external_in',
+				venue: dst,
 				day: d.day,
 				txId: d.tx_id,
 				asset: a,

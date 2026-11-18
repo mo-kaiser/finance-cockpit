@@ -21,6 +21,8 @@ export interface LedgerData {
 export interface OpeningBalance {
 	id: string;
 	ts: string;
+	/** Börse: 'bitget' oder 'kucoin' */
+	venue?: string;
 	asset: string;
 	amount: string;
 	cost_eur: string | null;
@@ -31,7 +33,7 @@ export interface OpeningBalance {
 /** Kalendertag in Europe/Berlin */
 export const berlinDay = (ts: string) => new Date(ts).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
 
-/** Anfangsbestand als Ledger-Buchung (Bitget-Spot, ein FIFO-Topf über alle Konten) */
+/** Anfangsbestand als Ledger-Buchung im FIFO-Topf der jeweiligen Börse */
 export const openingEntry = (o: OpeningBalance): LedgerEntry => ({
 	tx_id: `manual:${o.id}`,
 	ts: o.ts,
@@ -43,7 +45,7 @@ export const openingEntry = (o: OpeningBalance): LedgerEntry => ({
 	sell_cur: null,
 	fee_amount: null,
 	fee_cur: null,
-	exchange: 'Bitget Spot',
+	exchange: o.venue === 'kucoin' ? 'Kucoin Funding' : 'Bitget Spot',
 	trade_group: null,
 	comment: o.note,
 	n: 1,
@@ -83,7 +85,7 @@ export function loadLedger(db: SupabaseClient, force = false): Promise<LedgerDat
 			.then(({ data, error }) => ({ rows: (data ?? []) as PriceSeriesRow[], error: error?.message ?? null }));
 		const openingsP = db
 			.from('manual_adjustments')
-			.select('id, ts, asset, amount::text, cost_eur::text, note, created_at')
+			.select('id, ts, venue, asset, amount::text, cost_eur::text, note, created_at')
 			.eq('kind', 'opening_balance')
 			.order('ts')
 			.then(({ data, error }) => {

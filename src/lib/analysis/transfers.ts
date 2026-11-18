@@ -57,7 +57,9 @@ const ACCOUNT: Record<string, string> = {
 	'bitget spot': 'Spot',
 	'bitget futures': 'Futures',
 	'bitget earn': 'Earn',
-	'bitget strategy': 'Bots'
+	'bitget strategy': 'Bots',
+	'kucoin funding': 'KuCoin',
+	'kucoin trading': 'KuCoin Trading'
 };
 const account = (exchange: string) => ACCOUNT[exchange.toLowerCase()] ?? exchange.replace(/^Bitget /i, '');
 
@@ -165,6 +167,26 @@ export function buildMovements(ledger: LedgerEntry[], records: WalletRecord[]): 
 		});
 	}
 
+	// Bitget-Einzahlungsdaten zu Überweisungen von anderen Börsen zuordnen (Netzwerk, Tx-Hash) statt doppelt zu zeigen
+	const crossInfo = new Map<string, Pick<Movement, 'chain' | 'address' | 'txHash'>>();
+	for (const d of ledger) {
+		if (d.link?.kind !== 'cross' || d.link.role !== 'in' || !d.buy_cur) continue;
+		const coin = asset(d.buy_cur);
+		const t = Date.parse(d.ts);
+		const r = records.find(
+			(x) =>
+				!used.has(x.record_id) &&
+				x.endpoint === 'deposits' &&
+				asset(str(x.raw.coin) ?? '') === coin &&
+				D(x.raw.size).eq(D(d.buy_amount)) &&
+				Math.abs(recordTime(x) - t) <= MATCH_MS
+		);
+		if (!r) continue;
+		used.add(r.record_id);
+		const f = fromRecord(r);
+		crossInfo.set(d.tx_id, { chain: f.chain, address: f.address, txHash: f.txHash });
+	}
+
 	// Ein-/Auszahlungen, die (noch) keine Buchung haben: ausstehend, fehlgeschlagen oder noch nicht abgerufen
 	for (const r of records) {
 		if (used.has(r.record_id)) continue;
@@ -196,8 +218,34 @@ export function buildMovements(ledger: LedgerEntry[], records: WalletRecord[]): 
 		earn: boolean;
 	}
 	const legs: Leg[] = [];
+	// Überweisungen zwischen Börsen (von linkTransfers verknüpft): eine Zeile „KuCoin → Bitget“ unter Ein-/Auszahlungen
+	const byTx = new Map(ledger.map((e) => [e.tx_id, e]));
 	for (const e of ledger) {
-		if (classify(e) !== 'transfer') continue;
+		if (e.link?.kind !== 'cross' || e.link.role !== 'out') continue;
+		const d = byTx.get(e.link.peer);
+		if (!d) continue;
+		const fee = D(e.sell_amount).sub(D(d.buy_amount));
+		out.push({
+			key: `x:${e.tx_id}`,
+			ts: d.ts,
+			bucket: 'external',
+			direction: 'move',
+			coin: asset(d.buy_cur ?? '?'),
+			amount: D(d.buy_amount),
+			fee: fee.gt(0) ? fee : null,
+			from: account(e.exchange),
+			to: account(d.exchange),
+			status: 'success',
+			chain: crossInfo.get(d.tx_id)?.chain ?? null,
+			address: crossInfo.get(d.tx_id)?.address ?? null,
+			txHash: e.tx_hash ?? d.tx_hash ?? crossInfo.get(d.tx_id)?.txHash ?? null,
+			viaBitget: false,
+			eur: null,
+			source: 'ledger'
+		});
+	}
+	for (const e of ledger) {
+		if (classify(e) !== 'transfer' || e.link?.kind === 'cross') continue;
 		const isIn = e.type === 'Deposit';
 		const acc = account(e.exchange);
 		legs.push({

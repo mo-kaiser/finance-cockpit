@@ -40,7 +40,14 @@ export function onChainStaked(ledger: LedgerEntry[], live?: LiveData): Set<strin
 	return out;
 }
 
-export function reconcile(live: LiveData, holdings: Holding[], onChain: Set<string> = new Set(), minUsdt = 1): ReconcileRow[] {
+export function reconcile(
+	live: LiveData,
+	holdings: Holding[],
+	onChain: Set<string> = new Set(),
+	minUsdt = 1,
+	/** Kurs (USDT) für Coins ohne Live-Kurs, z. B. letzter Tageskurs */
+	fallbackPrice: (coin: string) => Decimal | null = () => null
+): ReconcileRow[] {
 	const all = new Set(['spot', 'earn', 'futures'] as const);
 	const p = buildPortfolio(live, null, holdings, all, onChain);
 
@@ -59,7 +66,10 @@ export function reconcile(live: LiveData, holdings: Holding[], onChain: Set<stri
 	// Coins, die laut Buchungen da sein müssten, bei Bitget aber fehlen
 	for (const h of holdings) {
 		if (seen.has(h.asset) || USD_STABLE.has(h.asset) || h.asset === FIAT_EUR || h.qty.isZero()) continue;
-		rows.push({ coin: h.asset, live: new Decimal(0), booked: h.qty, gap: h.qty.neg(), gapUsdt: null, onChain: false });
+		const p = fallbackPrice(h.asset);
+		const gapUsdt = p ? h.qty.mul(p).neg() : null;
+		if (gapUsdt && gapUsdt.abs().lt(minUsdt)) continue;
+		rows.push({ coin: h.asset, live: new Decimal(0), booked: h.qty, gap: h.qty.neg(), gapUsdt, onChain: false });
 	}
 	return rows.sort((a, b) => (b.gapUsdt?.abs() ?? new Decimal(0)).cmp(a.gapUsdt?.abs() ?? new Decimal(0)));
 }

@@ -20,6 +20,30 @@ export interface LiveData {
 	tickers: Section<Record<string, string>>;
 }
 
+/** Zwei Live-Abfragen (z. B. Bitget und KuCoin) zu einer zusammenführen; Kurse: erste Quelle hat Vorrang. */
+export function mergeLive(a: LiveData, b: LiveData): LiveData {
+	const cat = <T,>(x: Section<T[]> | undefined, y: Section<T[]> | undefined): Section<T[]> => {
+		if (x && !x.ok) return x;
+		if (y && !y.ok) return y;
+		return { ok: true, data: [...(x?.ok ? x.data : []), ...(y?.ok ? y.data : [])] };
+	};
+	const ta = a.tickers.ok ? a.tickers.data : {};
+	const tb = b.tickers.ok ? b.tickers.data : {};
+	return {
+		at: a.at,
+		spot: cat(a.spot, b.spot),
+		earnFlex: cat(a.earnFlex, b.earnFlex),
+		earnFixed: cat(a.earnFixed, b.earnFixed),
+		// Earn-Übersicht: Bitget liefert sie gesamt, KuCoin ebenso – zusammenführen
+		earnAccount: cat(a.earnAccount ?? { ok: true, data: [] }, b.earnAccount ?? { ok: true, data: [] }),
+		elite: cat(a.elite, b.elite),
+		futures: cat(a.futures, b.futures),
+		positions: cat(a.positions, b.positions),
+		accounts: cat(a.accounts, b.accounts),
+		tickers: { ok: true, data: { ...tb, ...ta } }
+	};
+}
+
 export interface PortfolioRow {
 	coin: string;
 	byAccount: Record<Account, Decimal>;

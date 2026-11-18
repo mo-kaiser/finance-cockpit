@@ -15,9 +15,53 @@
 	const fx = $derived(new FxTable(data.ledger?.fx ?? []));
 	const priceTable = $derived(new PriceTable(data.ledger?.prices ?? []));
 	const tax = $derived(data.ledger && fx.size ? computeTax(data.ledger.ledger, fx, 'all', priceTable) : null);
+	// Abgleich je Börse (FIFO wird je Börse geführt)
+	type V = 'bitget' | 'kucoin';
+	const venues = $derived<V[]>(data.kucoin ? ['bitget', 'kucoin'] : ['bitget']);
+	let view = $state<V>('bitget');
+	const liveV = $derived(view === 'kucoin' ? data.kucoin : data.live);
 	const rows = $derived(
-		tax && data.live && data.ledger ? reconcile(data.live, tax.holdingsEnd, onChainStaked(data.ledger.ledger, data.live)) : []
+		tax && liveV && data.ledger
+			? reconcile(
+					liveV,
+					tax.holdingsByVenue[view],
+					view === 'bitget' ? onChainStaked(data.ledger.ledger, data.live ?? undefined) : new Set(),
+					1,
+					// Coins ohne Live-Kurs (nicht mehr gehalten): Wert über den letzten Tageskurs
+					(coin) => {
+						const r = priceTable.range(coin);
+						return r ? (priceTable.closeFor(coin, r.last)?.close ?? null) : null;
+					}
+				)
+			: []
 	);
+
+	/** Verkäufe/Abgänge ohne Kauf in den Daten (Fehlbestand) – meist Bestände von vor Beginn der Historie */
+	const shortfalls = $derived.by(() => {
+		if (!tax) return [];
+		const m = new Map<string, { venue: V; coin: string; qty: Decimal; first: string; n: number }>();
+		const add = (venue: V, coin: string, q: Decimal, day: string) => {
+			const k = `${venue}|${coin}`;
+			const r = m.get(k) ?? { venue, coin, qty: new Decimal(0), first: day, n: 0 };
+			r.qty = r.qty.add(q);
+			if (day < r.first) r.first = day;
+			r.n++;
+			m.set(k, r);
+		};
+		for (const d of tax.disposals) for (const p of d.portions) if (p.acquiredDay === null) add(d.venue as V, d.asset, p.qty, d.day);
+		for (const w of tax.warnings) if (w.kind === 'consume_shortfall' && w.asset && w.qty) add((w.venue ?? 'bitget') as V, w.asset, w.qty, w.day);
+		// Steuerlich relevant ab 2026; Stablecoins (Futures-Verluste am Anfang der Historie) und Kleinstbeträge ausblenden
+		return [...m.values()]
+			.filter((f) => showOldShortfalls || f.first >= '2026-01-01')
+			.filter((f) => !USD_STABLE.has(f.coin))
+			.filter((f) => {
+				const v = priceTable.valueUsdt(f.coin, f.qty, f.first);
+				return v === null || v.gte(1);
+			})
+			.sort((a, b) => a.first.localeCompare(b.first));
+	});
+	let showOldShortfalls = $state(false);
+	const VNAME: Record<V, string> = { bitget: 'Bitget', kucoin: 'KuCoin' };
 	const openings = $derived(data.ledger?.openings ?? []);
 
 	/** Erster Tag der Historie (ohne nachgetragene Anfangsbestände) = Standard-Kaufdatum */
@@ -28,6 +72,7 @@
 	});
 
 	// Formular
+	let venue = $state<V>('bitget');
 	let coin = $state('');
 	let amount = $state('');
 	let date = $state('');
@@ -37,7 +82,8 @@
 	let msg = $state('');
 	let err = $state('');
 
-	function take(r: { coin: string; gap: Decimal }) {
+	function take(r: { coin: string; gap: Decimal }, v: V = view) {
+		venue = v;
 		coin = r.coin;
 		amount = r.gap.toString();
 		date = '';
@@ -72,7 +118,7 @@
 		const { error } = await data.supabase.from('manual_adjustments').insert({
 			// Mittag UTC liegt sicher auf demselben Berliner Kalendertag
 			ts: new Date(`${day}T12:00:00Z`).toISOString(),
-			venue: 'bitget',
+			venue,
 			asset: c,
 			amount: a.toString(),
 			cost_eur: k ? k.toString() : null,
@@ -95,7 +141,7 @@
 				body: JSON.stringify({ coin: c, from: day })
 			}).catch(() => null);
 		}
-		msg = `Anfangsbestand ${qty(a)} ${c} gespeichert.`;
+		msg = `Anfangsbestand ${qty(a)} ${c} (${VNAME[venue]}) gespeichert.`;
 		coin = amount = date = cost = note = '';
 		clearLedgerCache();
 		await invalidate('app:korrekturen');
@@ -118,24 +164,33 @@
 <h1>Korrekturen</h1>
 <p class="muted">
 	Nachträge für das, was in den Buchungen fehlt. Zuerst der <strong>Anfangsbestand</strong>: Coins, die du schon vor Beginn
-	der Historie ({dateDe(historyStart)}) bei Bitget hattest. Sie fließen in Dashboard und Steuer ein wie ein Kauf.
+	der Historie ({dateDe(historyStart)}) bei einer Börse hattest. Sie fließen in Dashboard und Steuer ein wie ein Kauf.
 </p>
 
 {#if data.ledgerError}<p class="error">{data.ledgerError}</p>{/if}
 
 <section class="card">
-	<div class="card-title">Abgleich: Bitget gegen Buchungen</div>
-	{#if data.liveError}
+	<div class="head-row">
+		<div class="card-title">Abgleich: {VNAME[view]} gegen Buchungen</div>
+		{#if venues.length > 1}
+			<div class="seg" role="group" aria-label="Börse">
+				{#each venues as v (v)}<button aria-pressed={view === v} onclick={() => (view = v)}>{VNAME[v]}</button>{/each}
+			</div>
+		{/if}
+	</div>
+	{#if view === 'bitget' && data.liveError}
 		<p class="error small">Bitget-Bestände nicht geladen: {data.liveError}</p>
-	{:else if !tax || !data.live}
+	{:else if view === 'kucoin' && data.kucoinError}
+		<p class="error small">KuCoin-Bestände nicht geladen: {data.kucoinError}</p>
+	{:else if !tax || !liveV}
 		<p class="muted small">Lade …</p>
 	{:else if !rows.length}
-		<p class="ok">Alle Bestände (ab 1 USDT) sind durch die Buchungen erklärt.</p>
+		<p class="ok">Alle {VNAME[view]}-Bestände (ab 1 USDT) sind durch die Buchungen erklärt.</p>
 	{:else}
 		<div class="table-wrap">
 			<table>
 				<thead>
-					<tr><th>Coin</th><th class="num">bei Bitget</th><th class="num">aus Buchungen</th><th class="num">Differenz</th><th class="num">Wert (USDT)</th><th>Einschätzung</th><th></th></tr>
+					<tr><th>Coin</th><th class="num">bei {VNAME[view]}</th><th class="num">aus Buchungen</th><th class="num">Differenz</th><th class="num">Wert (USDT)</th><th>Einschätzung</th><th></th></tr>
 				</thead>
 				<tbody>
 					{#each rows as r (r.coin)}
@@ -146,7 +201,7 @@
 							<td class="num {r.gap.gt(0) ? 'gain' : 'loss'}">{r.gap.gt(0) ? '+' : ''}{qty(r.gap, 6)}</td>
 							<td class="num">{r.gapUsdt ? money(r.gapUsdt.abs(), 'USDT') : '–'}</td>
 							<td class="small">
-								{#if r.gap.lt(0)}Buchungen zeigen mehr als Bitget – evtl. fehlt ein Abgang
+								{#if r.gap.lt(0)}Buchungen zeigen mehr als {VNAME[view]} – evtl. fehlt ein Abgang (z. B. Token-Umstellung, Delisting)
 								{:else if r.onChain}Im On-Chain-Staking: noch nicht ausgezahlte Erträge – <strong>nicht</strong> nachtragen, sie werden bei der Auszahlung gebucht
 								{:else}Kauf vor Beginn der Historie?{/if}
 							</td>
@@ -165,10 +220,49 @@
 	{/if}
 </section>
 
+{#if shortfalls.length || showOldShortfalls}
+	<section class="card" style="margin-top:16px">
+		<div class="head-row">
+			<div class="card-title">Verkauft, aber nicht gekauft</div>
+			<label class="small"><input type="checkbox" bind:checked={showOldShortfalls} /> auch vor 2026</label>
+		</div>
+		<p class="small muted">
+			Abgänge, für die es in den Buchungen keinen Kauf gibt – meist Bestände von vor Beginn der Historie. Ohne Nachtrag ist
+			der Gewinn unbekannt (Status „Fehlbestand“ auf der Steuer-Seite). Mit Anfangsbestand gilt der Beginn der Historie als
+			Kaufdatum; liegt der Kauf über ein Jahr vor dem Verkauf, ist er steuerfrei.
+		</p>
+		<div class="table-wrap">
+			<table>
+				<thead><tr><th>Börse</th><th>Coin</th><th class="num">Menge ohne Kauf</th><th>erster Abgang</th><th></th></tr></thead>
+				<tbody>
+					{#each shortfalls as f (f.venue + f.coin)}
+						<tr>
+							<td>{VNAME[f.venue]}</td>
+							<td><strong>{f.coin}</strong></td>
+							<td class="num">{qty(f.qty, 8)}</td>
+							<td class="small">{dateDe(f.first)}</td>
+							<td><button class="ghost" onclick={() => take({ coin: f.coin, gap: f.qty }, f.venue)}>Nachtragen</button></td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+	</section>
+{/if}
+
 <section class="card" id="form" style="margin-top:16px">
 	<div class="card-title">Anfangsbestand nachtragen</div>
 	<form onsubmit={save}>
 		<div class="grid-2">
+			{#if venues.length > 1}
+				<div>
+					<label for="venue">Börse</label>
+					<select id="venue" bind:value={venue}>
+						{#each venues as v (v)}<option value={v}>{VNAME[v]}</option>{/each}
+					</select>
+				</div>
+				<div></div>
+			{/if}
 			<div>
 				<label for="coin">Coin</label>
 				<input id="coin" bind:value={coin} placeholder="z. B. BGB" autocomplete="off" />
@@ -205,10 +299,11 @@
 		<div class="card-title">Eingetragene Anfangsbestände</div>
 		<div class="table-wrap">
 			<table>
-				<thead><tr><th>Coin</th><th class="num">Menge</th><th>Kaufdatum</th><th class="num">Kosten</th><th>Notiz</th><th></th></tr></thead>
+				<thead><tr><th>Börse</th><th>Coin</th><th class="num">Menge</th><th>Kaufdatum</th><th class="num">Kosten</th><th>Notiz</th><th></th></tr></thead>
 				<tbody>
 					{#each openings as o (o.id)}
 						<tr>
+							<td>{VNAME[(o.venue as V) ?? 'bitget'] ?? o.venue}</td>
 							<td><strong>{o.asset}</strong></td>
 							<td class="num">{qty(new Decimal(o.amount), 8)}</td>
 							<td>{dateDe(berlinDay(o.ts))}</td>
@@ -222,3 +317,17 @@
 		</div>
 	</section>
 {/if}
+
+<style>
+	.head-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		gap: 12px;
+		flex-wrap: wrap;
+	}
+	.head-row .seg {
+		flex-wrap: wrap;
+		max-width: 100%;
+	}
+</style>

@@ -85,3 +85,18 @@ describe('buildMovements', () => {
 		expect(shortAddr(null)).toBe('');
 	});
 });
+
+describe('Überweisung zwischen Börsen', () => {
+	it('zeigt KuCoin → Bitget als eine Zeile mit Netzwerk aus den Bitget-Einzahlungsdaten', async () => {
+		const { linkTransfers } = await import('#lib/tax/links.ts');
+		const t = Date.parse('2026-11-11T08:24:53Z');
+		const ledger = linkTransfers([
+			e({ tx_id: 'kw', ts: '2026-11-11T08:24:28+00:00', exchange: 'Kucoin Funding', type: 'Withdrawal', comment: 'Withdrawal', sell_amount: '0.35054294', sell_cur: 'ETH', fee_amount: '0.00024', fee_cur: 'ETH', tx_hash: '0xabc' }),
+			e({ tx_id: 'bd', ts: '2026-11-11T08:24:53+00:00', type: 'Deposit', comment: 'Deposit', buy_amount: '0.35030294', buy_cur: 'ETH' })
+		]);
+		const m = buildMovements(ledger, [dep('o9', { coin: 'ETH', size: '0.35030294', status: 'success', chain: 'BEP20', fromAddress: '0x0310', tradeId: '0xabc', dest: 'on_chain', cTime: String(t), uTime: String(t) })]);
+		expect(m).toHaveLength(1);
+		expect(m[0]).toMatchObject({ bucket: 'external', direction: 'move', from: 'KuCoin', to: 'Spot', chain: 'BEP20', txHash: '0xabc', coin: 'ETH' });
+		expect(m[0]!.fee!.toString()).toBe('0.00024');
+	});
+});
