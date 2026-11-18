@@ -1,8 +1,8 @@
 import { error, json } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
-import { BACKUP_PAGE, BACKUP_TABLES, backupTable } from '$lib/backup/tables';
-import { ownerId } from '$lib/server/bitget-sync';
-import { supabaseAdmin } from '$lib/server/supabase-admin';
+import { BACKUP_SECRET } from '$app/env/private';
+import { BACKUP_PAGE, BACKUP_TABLES, backupTable } from '#lib/backup/tables.ts';
+import { ownerId } from '#lib/server/bitget-sync.ts';
+import { supabaseAdmin } from '#lib/server/supabase-admin.ts';
 import type { RequestHandler } from './$types';
 
 export const config = { maxDuration: 30 };
@@ -15,7 +15,7 @@ export const config = { maxDuration: 30 };
  * Nur lesend.
  */
 export const GET: RequestHandler = async ({ url, request, locals }) => {
-	const secret = env.BACKUP_SECRET?.trim();
+	const secret = BACKUP_SECRET?.trim();
 	const bearer = request.headers.get('authorization');
 	const viaSecret = !!secret && bearer === `Bearer ${secret}`;
 	const claims = viaSecret ? null : await locals.getClaims();
@@ -30,7 +30,7 @@ export const GET: RequestHandler = async ({ url, request, locals }) => {
 	if (!Number.isInteger(offset) || offset < 0) error(400, 'Ungültiger Offset');
 
 	const admin = supabaseAdmin();
-	const userId = claims?.sub ?? (await ownerId(admin));
+	const userId = claims?.sub ?? await ownerId(admin);
 
 	// Beim ersten Abruf auch die Gesamtzahl, damit die Sicherung ihre Vollständigkeit prüfen kann
 	let q = admin.from(table.name).select(table.select, offset === 0 ? { count: 'exact' } : undefined);

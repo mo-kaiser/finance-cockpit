@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { parseCoinTrackingCsv } from '$lib/import/cointracking';
-import { FxTable } from '$lib/tax/fx';
-import type { LedgerEntry } from '$lib/tax/types';
-import { ledgerFromCt } from '$lib/tax/ledger-from-ct';
+import { parseCoinTrackingCsv } from '#lib/import/cointracking.ts';
+import { FxTable } from '#lib/tax/fx.ts';
+import type { LedgerEntry } from '#lib/tax/types.ts';
+import { ledgerFromCt } from '#lib/tax/ledger-from-ct.ts';
 import { futuresEvents, futuresStats, inRange } from './futures';
 
 const fx = new FxTable([{ rate_date: '2023-01-01', rate: '1.25' }]);

@@ -1,6 +1,6 @@
 import { error, json } from '@sveltejs/kit';
-import { syncCoinPrices } from '$lib/server/prices';
-import { supabaseAdmin } from '$lib/server/supabase-admin';
+import { syncCoinPrices } from '#lib/server/prices.ts';
+import { supabaseAdmin } from '#lib/server/supabase-admin.ts';
 import type { RequestHandler } from './$types';
 
 export const config = { maxDuration: 60 };

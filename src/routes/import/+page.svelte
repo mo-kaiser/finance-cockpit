@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import {
 		parseCoinTrackingCsv,
 		sha256Hex,
 		summarize,
 		type CtRow,
 		type CtSummary
-	} from '$lib/import/cointracking';
+	} from '#lib/import/cointracking.ts';
 
 	let { data } = $props();
 
@@ -94,7 +94,7 @@
 			.eq('id', importId);
 		status = 'done';
 		message = `${rows.length.toLocaleString('de-DE')} Zeilen verarbeitet. Bereits vorhandene Tx-IDs wurden übersprungen.`;
-		await invalidateAll();
+		await refreshAll();
 	}
 
 	function fail(msg: string) {

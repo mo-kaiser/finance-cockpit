@@ -1,9 +1,9 @@
 import { error, json } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
-import { asset, FIAT_EUR, USD_STABLE } from '$lib/tax/assets';
-import { sendAlert } from '$lib/server/alert';
-import { dayBefore, priceStatus, syncCoinPrices, type PriceSyncResult } from '$lib/server/prices';
-import { supabaseAdmin } from '$lib/server/supabase-admin';
+import { CRON_SECRET } from '$app/env/private';
+import { asset, FIAT_EUR, USD_STABLE } from '#lib/tax/assets.ts';
+import { sendAlert } from '#lib/server/alert.ts';
+import { dayBefore, priceStatus, syncCoinPrices, type PriceSyncResult } from '#lib/server/prices.ts';
+import { supabaseAdmin } from '#lib/server/supabase-admin.ts';
 import type { RequestHandler } from './$types';
 
 export const config = { maxDuration: 60 };
@@ -15,7 +15,7 @@ export const config = { maxDuration: 60 };
  * Die Historie lädt man einmalig auf der System-Seite nach.
  */
 export const GET: RequestHandler = async ({ request }) => {
-	const secret = env.CRON_SECRET;
+	const secret = CRON_SECRET;
 	if (!secret || request.headers.get('authorization') !== `Bearer ${secret}`) error(401, 'Nicht autorisiert');
 
 	const started = Date.now();
@@ -59,7 +59,7 @@ export const GET: RequestHandler = async ({ request }) => {
 		await sendAlert('Täglicher Kursabruf mit Fehlern', [
 			'Beim täglichen Abruf der Coin-Tageskurse ist etwas schiefgegangen. Fehlende Tage lassen sich auf der System-Seite nachladen.',
 			'',
-			...(fatal ? [fatal] : []),
+			...fatal ? [fatal] : [],
 			...errors.map((r) => `${r.coin}: ${r.error}`)
 		]);
 	}

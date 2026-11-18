@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { env } from '$env/dynamic/private';
-import type { SyncRun } from '$lib/monitor/health';
+import { RESEND_API_KEY, ALERT_EMAIL_TO, ALERT_EMAIL_FROM } from '$app/env/private';
+import type { SyncRun } from '#lib/monitor/health.ts';
 
 /**
  * E-Mail-Warnung über Resend (https://resend.com), ohne SDK.
@@ -8,12 +8,18 @@ import type { SyncRun } from '$lib/monitor/health';
  * von onboarding@resend.dev an die eigene Konto-Adresse senden – das reicht für Warnungen.
  */
 export async function sendAlert(subject: string, lines: string[]): Promise<{ ok: boolean; error?: string }> {
-	const key = env.RESEND_API_KEY?.trim();
-	const to = env.ALERT_EMAIL_TO?.trim();
+	const key = RESEND_API_KEY?.trim();
+	const to = ALERT_EMAIL_TO?.trim();
 	if (!key || !to) return { ok: false, error: 'RESEND_API_KEY oder ALERT_EMAIL_TO fehlt' };
-	const from = env.ALERT_EMAIL_FROM?.trim() || 'Cockpit <onboarding@resend.dev>';
 
-	const text = [...lines, '', 'System-Seite: https://cockpit.moritz-kaiser.com/system'].join('\n');
+	const from = ALERT_EMAIL_FROM?.trim() || 'Cockpit <onboarding@resend.dev>';
+
+	const text = [
+		...lines,
+		'',
+		'System-Seite: https://cockpit.moritz-kaiser.com/system'
+	].join('\n');
+
 	try {
 		const res = await fetch('https://api.resend.com/emails', {
 			method: 'POST',

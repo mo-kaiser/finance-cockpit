@@ -1,8 +1,17 @@
 import { error, json } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
-import { DAY_MS, ENDPOINTS, fetchWindow, ownerId, storeRecords, windows } from '$lib/server/bitget-sync';
-import { sendAlert } from '$lib/server/alert';
-import { supabaseAdmin } from '$lib/server/supabase-admin';
+import { CRON_SECRET } from '$app/env/private';
+
+import {
+	DAY_MS,
+	ENDPOINTS,
+	fetchWindow,
+	ownerId,
+	storeRecords,
+	windows
+} from '#lib/server/bitget-sync.ts';
+
+import { sendAlert } from '#lib/server/alert.ts';
+import { supabaseAdmin } from '#lib/server/supabase-admin.ts';
 import type { RequestHandler } from './$types';
 
 export const config = { maxDuration: 60 };
@@ -12,7 +21,7 @@ const LOOKBACK_DAYS = 5;
 
 /** Täglicher Abruf durch Vercel Cron (nur auf Production). Vercel sendet „Authorization: Bearer CRON_SECRET“. */
 export const GET: RequestHandler = async ({ request }) => {
-	const secret = env.CRON_SECRET;
+	const secret = CRON_SECRET;
 	if (!secret || request.headers.get('authorization') !== `Bearer ${secret}`) error(401, 'Nicht autorisiert');
 
 	let importId: string | null = null;

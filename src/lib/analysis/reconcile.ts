@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
-import type { Holding } from '$lib/tax/engine';
-import { asset, FIAT_EUR, USD_STABLE } from '$lib/tax/assets';
-import type { LedgerEntry } from '$lib/tax/types';
+import type { Holding } from '#lib/tax/engine.ts';
+import { asset, FIAT_EUR, USD_STABLE } from '#lib/tax/assets.ts';
+import type { LedgerEntry } from '#lib/tax/types.ts';
 import { buildPortfolio, type LiveData } from './portfolio';
 
 /** Abgleich Live-Bestand bei Bitget gegen Bestand aus den Buchungen (FIFO-Historie). */

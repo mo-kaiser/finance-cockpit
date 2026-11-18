@@ -1,4 +1,4 @@
-import { loadLedger } from '$lib/data/ledger';
+import { loadLedger } from '#lib/data/ledger.ts';
 import type { PageLoad } from './$types';
 
 export const ssr = false;

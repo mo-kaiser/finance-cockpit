@@ -1,8 +1,8 @@
 import { error, json } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
-import { assessSync, berlin } from '$lib/monitor/health';
-import { recentSyncRuns, sendAlert } from '$lib/server/alert';
-import { supabaseAdmin } from '$lib/server/supabase-admin';
+import { CRON_SECRET } from '$app/env/private';
+import { assessSync, berlin } from '#lib/monitor/health.ts';
+import { recentSyncRuns, sendAlert } from '#lib/server/alert.ts';
+import { supabaseAdmin } from '#lib/server/supabase-admin.ts';
 import type { RequestHandler } from './$types';
 
 export const config = { maxDuration: 30 };
@@ -12,7 +12,7 @@ export const config = { maxDuration: 30 };
  * erfolgreich war oder ein Lauf hängen geblieben ist. Fehlgeschlagene Läufe meldet der Abruf selbst.
  */
 export const GET: RequestHandler = async ({ request }) => {
-	const secret = env.CRON_SECRET;
+	const secret = CRON_SECRET;
 	if (!secret || request.headers.get('authorization') !== `Bearer ${secret}`) error(401, 'Nicht autorisiert');
 
 	let problems: string[];

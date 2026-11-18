@@ -3,7 +3,7 @@
 	import { invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import LoadingIndicator from '$lib/components/LoadingIndicator.svelte';
+	import LoadingIndicator from '#lib/components/LoadingIndicator.svelte';
 
 	let { data, children } = $props();
 

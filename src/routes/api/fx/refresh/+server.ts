@@ -1,5 +1,5 @@
 import { error, json } from '@sveltejs/kit';
-import { parseEcbCsv } from '$lib/tax/fx';
+import { parseEcbCsv } from '#lib/tax/fx.ts';
 import type { RequestHandler } from './$types';
 
 // Referenzkurs: US-Dollar je 1 Euro, täglich (Quelle: EZB-Daten-API)

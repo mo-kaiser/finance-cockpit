@@ -1,7 +1,7 @@
 import { error, json } from '@sveltejs/kit';
-import { bitgetGet, BitgetError } from '$lib/server/bitget';
-import { DAY_MS, endpointByKey } from '$lib/server/bitget-sync';
-import { supabaseAdmin } from '$lib/server/supabase-admin';
+import { bitgetGet, BitgetError } from '#lib/server/bitget.ts';
+import { DAY_MS, endpointByKey } from '#lib/server/bitget-sync.ts';
+import { supabaseAdmin } from '#lib/server/supabase-admin.ts';
 import type { RequestHandler } from './$types';
 
 export const config = { maxDuration: 60 };

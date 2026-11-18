@@ -1,9 +1,9 @@
-import { env } from '$env/dynamic/private';
-import { bitgetGet, BitgetError } from '$lib/server/bitget';
-import { supabaseAdmin } from '$lib/server/supabase-admin';
-import { ENDPOINTS } from '$lib/server/bitget-sync';
-import { sendAlert } from '$lib/server/alert';
-import type { SyncRun } from '$lib/monitor/health';
+import * as env from '$app/env/private';
+import { bitgetGet, BitgetError } from '#lib/server/bitget.ts';
+import { supabaseAdmin } from '#lib/server/supabase-admin.ts';
+import { ENDPOINTS } from '#lib/server/bitget-sync.ts';
+import { sendAlert } from '#lib/server/alert.ts';
+import type { SyncRun } from '#lib/monitor/health.ts';
 import type { Actions, PageServerLoad } from './$types';
 
 const VARS = [
@@ -20,13 +20,13 @@ const VARS = [
 export const load: PageServerLoad = async ({ locals }) => {
 	// Nur ob vorhanden und wie lang – niemals den Wert selbst
 	const vars = VARS.map((name) => {
-		const v = env[name] ?? '';
+		const v: string = env[name] ?? '';
 		return {
 			name,
 			present: v.length > 0,
 			length: v.length,
 			whitespace: v !== v.trim(),
-			quoted: /^["'].*["']$/.test(v)
+			quoted: (/^["'].*["']$/).test(v)
 		};
 	});
 	const { data: runs, error: runsErr } = await locals.supabase
@@ -39,7 +39,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		vars,
 		syncRuns: (runs ?? []) as SyncRun[],
 		syncRunsError: runsErr?.message ?? null,
-		vercelEnv: env.VERCEL_ENV ?? 'lokal',
+		vercelEnv: env.VERCEL_ENV || 'lokal',
 		endpoints: ENDPOINTS.map((e) => ({ key: e.key, label: e.label, windowDays: e.windowDays, maxDays: e.maxDays, role: e.role }))
 	};
 };
@@ -65,9 +65,12 @@ export const actions: Actions = {
 			const info = await bitgetGet<AccountInfo>('/api/v2/spot/account/info');
 			const authorities = info.authorities ?? [];
 			// Bitget-Kürzel: Endung r = lesen (z. B. coor, taxr); alles andere ist ein Schreib-/Handelsrecht
-			const risky = authorities.filter((a) => !/(r|read|readonly)$/i.test(a));
-			return { bitget: { ok: true, authorities, risky, ips: info.ips ?? '' } };
-		} catch (e) {
+			const risky = authorities.filter((a) => !(/(r|read|readonly)$/i).test(a));
+
+			return {
+				bitget: { ok: true, authorities, risky, ips: info.ips ?? '' }
+			};
+		} catch(e) {
 			const err = e as BitgetError;
 			return { bitget: { ok: false, error: `${err.message}${err.code ? ` (Code ${err.code})` : ''}` } };
 		}

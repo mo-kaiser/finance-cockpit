@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { LedgerEntry } from '$lib/tax/types';
+import type { LedgerEntry } from '#lib/tax/types.ts';
 import { buildMovements, shortAddr, type WalletRecord } from './transfers';
 
 const e = (p: Partial<LedgerEntry>): LedgerEntry => ({

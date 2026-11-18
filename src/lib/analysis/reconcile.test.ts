@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
 import { describe, expect, it } from 'vitest';
 import { onChainStaked, reconcile } from './reconcile';
-import type { LedgerEntry } from '$lib/tax/types';
+import type { LedgerEntry } from '#lib/tax/types.ts';
 import type { LiveData } from './portfolio';
 
 const ok = <T,>(data: T) => ({ ok: true as const, data });

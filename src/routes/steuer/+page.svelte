@@ -1,11 +1,11 @@
 <script lang="ts">
 	import Decimal from 'decimal.js';
 	import { invalidate } from '$app/navigation';
-	import { clearLedgerCache } from '$lib/data/ledger';
-	import { computeTax, type DisposalStatus, type WarningKind } from '$lib/tax/engine';
-	import { FxTable } from '$lib/tax/fx';
-	import { PriceTable } from '$lib/tax/prices';
-	import { download, kapCsv, soCsv } from '$lib/tax/csv';
+	import { clearLedgerCache } from '#lib/data/ledger.ts';
+	import { computeTax, type DisposalStatus, type WarningKind } from '#lib/tax/engine.ts';
+	import { FxTable } from '#lib/tax/fx.ts';
+	import { PriceTable } from '#lib/tax/prices.ts';
+	import { download, kapCsv, soCsv } from '#lib/tax/csv.ts';
 
 	let { data } = $props();
 

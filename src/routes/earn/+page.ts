@@ -1,5 +1,5 @@
-import { loadLedger } from '$lib/data/ledger';
-import type { LiveData } from '$lib/analysis/portfolio';
+import { loadLedger } from '#lib/data/ledger.ts';
+import type { LiveData } from '#lib/analysis/portfolio.ts';
 import type { PageLoad } from './$types';
 
 export const ssr = false;

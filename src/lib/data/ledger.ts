@@ -1,8 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { mapApiLedger, type ApiLedgerRow } from '$lib/tax/bitget-api';
-import type { FxRow } from '$lib/tax/fx';
-import type { PriceSeriesRow } from '$lib/tax/prices';
-import { OPENING_TYPE, type LedgerEntry } from '$lib/tax/types';
+import { mapApiLedger, type ApiLedgerRow } from '#lib/tax/bitget-api.ts';
+import type { FxRow } from '#lib/tax/fx.ts';
+import type { PriceSeriesRow } from '#lib/tax/prices.ts';
+import { OPENING_TYPE, type LedgerEntry } from '#lib/tax/types.ts';
 
 export interface LedgerData {
 	ledger: LedgerEntry[];

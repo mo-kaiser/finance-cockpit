@@ -1,10 +1,10 @@
 <script lang="ts">
 	import Decimal from 'decimal.js';
-	import BarChart from '$lib/components/BarChart.svelte';
-	import { EARN_KIND_LABEL, earnEvents, realizedApr, summarizeEarn, type EarnKind } from '$lib/analysis/earn';
-	import { buildPortfolio } from '$lib/analysis/portfolio';
-	import { MONTHS, money, pct, qty, type Cur } from '$lib/format';
-	import { FxTable } from '$lib/tax/fx';
+	import BarChart from '#lib/components/BarChart.svelte';
+	import { EARN_KIND_LABEL, earnEvents, realizedApr, summarizeEarn, type EarnKind } from '#lib/analysis/earn.ts';
+	import { buildPortfolio } from '#lib/analysis/portfolio.ts';
+	import { MONTHS, money, pct, qty, type Cur } from '#lib/format.ts';
+	import { FxTable } from '#lib/tax/fx.ts';
 
 	let { data } = $props();
 
