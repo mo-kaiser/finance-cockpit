@@ -3,6 +3,8 @@ import { mapApiLedger, type ApiLedgerRow } from '#lib/tax/bitget-api.ts';
 import type { FxRow } from '#lib/tax/fx.ts';
 import type { PriceSeriesRow } from '#lib/tax/prices.ts';
 import { OPENING_TYPE, type LedgerEntry } from '#lib/tax/types.ts';
+import { mapKucoinLedger, type KucoinRecordRow } from '#lib/tax/kucoin-api.ts';
+import { linkTransfers } from '#lib/tax/links.ts';
 
 export interface LedgerData {
 	ledger: LedgerEntry[];
@@ -12,7 +14,7 @@ export interface LedgerData {
 	pricesError: string | null;
 	/** Nachgetragene Anfangsbestände (manual_adjustments, kind opening_balance) */
 	openings: OpeningBalance[];
-	sources: { cointracking: number; api: number; apiLast: string | null };
+	sources: { cointracking: number; api: number; apiLast: string | null; kucoin?: number };
 	loadedAt: number;
 }
 
@@ -88,24 +90,59 @@ export function loadLedger(db: SupabaseClient, force = false): Promise<LedgerDat
 				if (error) throw new Error(`Anfangsbestände: ${error.message}`);
 				return (data ?? []) as unknown as OpeningBalance[];
 			});
-		const [ct, api, fx] = await Promise.all([
+		const [ct, api, fx, kcCt, kcApi] = await Promise.all([
 			pages<LedgerEntry>((a, b) => db.from('v_ledger').select('*').order('ts').order('tx_id').range(a, b), 'CoinTracking-Daten'),
 			pages<ApiLedgerRow>((a, b) => db.from('v_api_ledger').select('*').order('ts').order('tx_id').range(a, b), 'Bitget-API-Daten'),
 			pages<FxRow>(
 				(a, b) => db.from('fx_rates').select('rate_date, rate').eq('pair', 'EURUSD').eq('source', 'ECB').order('rate_date').range(a, b),
 				'EZB-Kurse'
+			),
+			// KuCoin: CoinTracking (bis 08/2025) und eigene API (ab 11/2025)
+			pages<LedgerEntry>(
+				(a, b) =>
+					db
+						.from('ct_rows')
+						.select('tx_id, ts, type, buy_amount::text, buy_cur, sell_amount::text, sell_cur, fee_amount::text, fee_cur, exchange, trade_group, comment')
+						.eq('venue', 'kucoin')
+						.order('ts')
+						.order('tx_id')
+						.range(a, b),
+				'KuCoin (CoinTracking)'
+			),
+			pages<KucoinRecordRow>(
+				(a, b) =>
+					db
+						.from('api_records')
+						.select('record_id, ts, raw')
+						.eq('source', 'kucoin')
+						.eq('endpoint', 'kucoin_ledgers')
+						.order('ts')
+						.order('record_id')
+						.range(a, b),
+				'KuCoin-API-Daten'
 			)
 		]);
 		const apiEntries = mapApiLedger(api);
+		// CoinTracking-Zeilen haben keinen Tag und n; Zeiten wie in v_ledger in Europe/Berlin
+		const kcCtEntries: LedgerEntry[] = kcCt.map((r) => ({ ...r, day: berlinDay(r.ts), n: 1 }));
+		// API erst nach dem letzten CoinTracking-Eintrag (keine Doppelzählung bei späteren Re-Importen)
+		const kcCtEnd = kcCtEntries.reduce((m, e) => (e.ts > m ? e.ts : m), '');
+		const kcApiEntries = mapKucoinLedger(kcApi).filter((e) => !kcCtEnd || Date.parse(e.ts) > Date.parse(kcCtEnd));
 		const pr = await pricesP;
 		const openings = await openingsP;
 		cache = {
-			ledger: [...openings.map(openingEntry), ...ct, ...apiEntries],
+			// Umbuchungen (KuCoin intern, KuCoin ↔ Bitget) verknüpfen, damit Bestände mit Kaufdatum mitwandern
+			ledger: linkTransfers([...openings.map(openingEntry), ...ct, ...apiEntries, ...kcCtEntries, ...kcApiEntries]),
 			openings,
 			fx,
 			prices: pr.rows,
 			pricesError: pr.error,
-			sources: { cointracking: ct.length, api: apiEntries.length, apiLast: api.length ? api[api.length - 1]!.ts : null },
+			sources: {
+				cointracking: ct.length + kcCtEntries.length,
+				api: apiEntries.length + kcApiEntries.length,
+				apiLast: api.length ? api[api.length - 1]!.ts : null,
+				kucoin: kcCtEntries.length + kcApiEntries.length
+			},
 			loadedAt: Date.now()
 		};
 		return cache;

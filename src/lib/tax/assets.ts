@@ -12,7 +12,10 @@ const TICKER_MAP: Record<string, string> = {
 	APU5: 'APU',
 	PEPE4: 'PEPE',
 	ZETA2: 'ZETA',
-	TONCOIN: 'TON'
+	TONCOIN: 'TON',
+	// KuCoin (CoinTracking): S5 = Sonic (wie „S“ im KuCoin-Bestand), ETH2 = ETH im KuCoin-ETH-Staking (1:1)
+	S5: 'S',
+	ETH2: 'ETH'
 };
 
 export function asset(ticker: string): string {
