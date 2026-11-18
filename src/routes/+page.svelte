@@ -429,7 +429,7 @@
 				{histGap.qty >= 0 ? '+' : ''}{eurFmt(histGap.qty)}{#if Math.abs(histGap.rest) >= 1}{' · '}Sonstiges {histGap.rest >= 0 ? '+' : ''}{eurFmt(histGap.rest)}{/if}.
 			{/if}
 			{#if history.unpriced.length}
-				Ohne Kurs und daher nicht in der Kurve: {history.unpriced.slice(0, 5).join(', ')}{history.unpriced.length > 5 ? ' …' : ''}.
+				Ohne Kurs und daher nicht in der Kurve: {history.unpriced.slice(0, 5).join(', ')}{history.unpriced.length > 5 ? ' …' : '.'}
 			{/if}
 		</p>
 	</section>
