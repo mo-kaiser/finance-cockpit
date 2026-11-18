@@ -58,7 +58,9 @@ export function buildPortfolio(
 	live: LiveData,
 	eurPerUsdt: Decimal | null,
 	costHoldings: Holding[],
-	accounts: Set<Account>
+	accounts: Set<Account>,
+	/** Coins im On-Chain-Staking (siehe onChainStaked) */
+	onChain: Set<string> = new Set()
 ): { rows: PortfolioRow[]; totalUsdt: Decimal; totalEur: Decimal | null; unpriced: string[] } {
 	const map = new Map<string, Record<Account, Decimal>>();
 	const put = (coin: string, acc: Account, q: Decimal) => {
@@ -85,8 +87,8 @@ export function buildPortfolio(
 	}
 	// On-Chain-Earn: nur ergänzen, was die Übersicht nicht schon enthält; Kurs aus Bitgets USDT-Wert
 	const impliedPrice: Record<string, Decimal> = {};
-	const stakedOnChain = new Set<string>();
-	if (live.elite?.ok) for (const e of live.elite.data) stakedOnChain.add(e.underlying || e.coin), stakedOnChain.add(e.coin);
+	const stakedOnChain = new Set(onChain);
+	if (live.elite?.ok) for (const e of live.elite.data) stakedOnChain.add(e.underlying || e.coin).add(e.coin);
 	if (live.elite?.ok) {
 		for (const e of live.elite.data) {
 			if (earnCoins.has(e.coin)) continue;

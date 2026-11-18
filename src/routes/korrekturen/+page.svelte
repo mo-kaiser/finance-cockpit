@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Decimal from 'decimal.js';
 	import { invalidate } from '$app/navigation';
-	import { reconcile } from '$lib/analysis/reconcile';
+	import { onChainStaked, reconcile } from '$lib/analysis/reconcile';
 	import { clearLedgerCache, berlinDay } from '$lib/data/ledger';
 	import { money, qty } from '$lib/format';
 	import { USD_STABLE } from '$lib/tax/assets';
@@ -15,7 +15,9 @@
 	const fx = $derived(new FxTable(data.ledger?.fx ?? []));
 	const priceTable = $derived(new PriceTable(data.ledger?.prices ?? []));
 	const tax = $derived(data.ledger && fx.size ? computeTax(data.ledger.ledger, fx, 'all', priceTable) : null);
-	const rows = $derived(tax && data.live ? reconcile(data.live, tax.holdingsEnd) : []);
+	const rows = $derived(
+		tax && data.live && data.ledger ? reconcile(data.live, tax.holdingsEnd, onChainStaked(data.ledger.ledger, data.live)) : []
+	);
 	const openings = $derived(data.ledger?.openings ?? []);
 
 	/** Erster Tag der Historie (ohne nachgetragene Anfangsbestände) = Standard-Kaufdatum */
@@ -145,7 +147,7 @@
 							<td class="num">{r.gapUsdt ? money(r.gapUsdt.abs(), 'USDT') : '–'}</td>
 							<td class="small">
 								{#if r.gap.lt(0)}Buchungen zeigen mehr als Bitget – evtl. fehlt ein Abgang
-								{:else if r.onChain}Im On-Chain-Staking: vermutlich noch nicht ausgezahlte Erträge – <strong>nicht</strong> nachtragen
+								{:else if r.onChain}Im On-Chain-Staking: noch nicht ausgezahlte Erträge – <strong>nicht</strong> nachtragen, sie werden bei der Auszahlung gebucht
 								{:else}Kauf vor Beginn der Historie?{/if}
 							</td>
 							<td>

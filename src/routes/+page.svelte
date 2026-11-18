@@ -7,6 +7,7 @@
 	import { computeTax } from '$lib/tax/engine';
 	import { FxTable } from '$lib/tax/fx';
 	import { PriceTable } from '$lib/tax/prices';
+	import { onChainStaked } from '$lib/analysis/reconcile';
 	import { ago, assessSync, berlin } from '$lib/monitor/health';
 	import { buildMovements, shortAddr, type Bucket } from '$lib/analysis/transfers';
 
@@ -42,7 +43,8 @@
 					data.live,
 					eurPerUsdt,
 					tax?.holdingsEnd ?? [],
-					new Set(account === 'all' ? (['spot', 'earn', 'futures'] as Account[]) : [account])
+					new Set(account === 'all' ? (['spot', 'earn', 'futures'] as Account[]) : [account]),
+					data.ledger ? onChainStaked(data.ledger.ledger, data.live) : undefined
 				)
 			: null
 	);
