@@ -8,6 +8,8 @@
 	import { FxTable } from '$lib/tax/fx';
 	import { PriceTable } from '$lib/tax/prices';
 	import { onChainStaked } from '$lib/analysis/reconcile';
+	import { valueHistory } from '$lib/analysis/history';
+	import LineChart from '$lib/components/LineChart.svelte';
 	import { ago, assessSync, berlin } from '$lib/monitor/health';
 	import { buildMovements, shortAddr, type Bucket } from '$lib/analysis/transfers';
 
@@ -133,6 +135,37 @@
 	const D = (s: string) => new Decimal(s || 0);
 
 	const sync = $derived(data.syncRuns ? assessSync(data.syncRuns) : null);
+
+	// Wertverlauf: Bestand aus den Buchungen × Tageskurs, bis gestern (heutiger Kurs steht erst morgen fest)
+	const RANGES = [
+		{ key: '3m', label: '3 Monate', days: 92 },
+		{ key: '1y', label: '1 Jahr', days: 366 },
+		{ key: 'ytd', label: String(new Date().getFullYear()), days: 0 },
+		{ key: 'all', label: 'Alle', days: Infinity }
+	] as const;
+	let range = $state<(typeof RANGES)[number]['key']>('1y');
+	const history = $derived(
+		data.ledger && fx.size && priceTable.coins.length
+			? valueHistory(data.ledger.ledger, fx, priceTable, new Date(Date.now() - 86_400_000).toISOString().slice(0, 10))
+			: null
+	);
+	const histShown = $derived.by(() => {
+		if (!history) return [];
+		const r = RANGES.find((x) => x.key === range)!;
+		const from =
+			r.key === 'ytd'
+				? `${new Date().getFullYear()}-01-01`
+				: r.days === Infinity
+					? ''
+					: new Date(Date.now() - r.days * 86_400_000).toISOString().slice(0, 10);
+		return history.points.filter((p) => p.day >= from);
+	});
+	const histFirst = $derived(histShown[0] ?? null);
+	const histLast = $derived(histShown.at(-1) ?? null);
+	/** Wertänderung im Zeitraum ohne Ein-/Auszahlungen = Ergebnis */
+	const histResult = $derived(histFirst && histLast ? histLast.valueEur - histFirst.valueEur - (histLast.investedEur - histFirst.investedEur) : null);
+	const eurFmt = (v: number) => v.toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+	const dayDe = (d: string) => `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(2, 4)}`;
 
 	// Ein- und Auszahlungen / Umbuchungen
 	const FILTERS: { key: Bucket | 'all'; label: string }[] = [
@@ -309,6 +342,51 @@
 	<p class="muted">Lade Bestände …</p>
 {/if}
 
+{#if history && histShown.length > 1}
+	<section class="card" style="margin-top:16px">
+		<div class="head-row">
+			<div class="card-title">Wertverlauf</div>
+			<div class="seg" role="group" aria-label="Zeitraum">
+				{#each RANGES as r (r.key)}
+					<button aria-pressed={range === r.key} onclick={() => (range = r.key)}>{r.label}</button>
+				{/each}
+			</div>
+		</div>
+		<div class="hist-kpis">
+			<div>
+				<div class="muted small">Wert am {dayDe(histLast!.day)}</div>
+				<strong>{eurFmt(histLast!.valueEur)}</strong>
+			</div>
+			<div>
+				<div class="muted small">Ein-/Auszahlungen im Zeitraum</div>
+				<strong>{eurFmt(histLast!.investedEur - histFirst!.investedEur)}</strong>
+			</div>
+			<div>
+				<div class="muted small">Ergebnis im Zeitraum</div>
+				<strong class={tone(histResult)}>{histResult! >= 0 ? '+' : ''}{eurFmt(histResult!)}</strong>
+			</div>
+		</div>
+		<LineChart
+			labels={histShown.map((p) => dayDe(p.day))}
+			values={histShown.map((p) => p.valueEur)}
+			values2={histShown.map((p) => p.investedEur)}
+			label="Wert"
+			label2="Netto eingezahlt"
+			fill={false}
+			format={eurFmt}
+			height={260}
+		/>
+		<p class="small muted">
+			Durchgezogen: Wert aller Coins laut Buchungen × Bitget-Tagesschlusskurs (in EUR über den EZB-Kurs). Gestrichelt: Netto
+			eingezahlt seit Beginn der Historie (Einzahlungen, Euro-Überweisungen und Anfangsbestände minus Auszahlungen, je zum
+			Tageswert). Ergebnis = Wertänderung ohne Ein-/Auszahlungen. Nicht enthalten: offene Futures-Positionen, noch nicht
+			ausgezahlte On-Chain-Erträge{history.unpriced.length
+				? `, ${history.unpriced.length} Coins ohne Kurs (${history.unpriced.slice(0, 5).join(', ')}${history.unpriced.length > 5 ? ' …' : ''})`
+				: ''}.
+		</p>
+	</section>
+{/if}
+
 {#if data.ledger}
 	<section class="card" style="margin-top:16px">
 		<div class="head-row">
@@ -410,6 +488,12 @@
 	}
 	.sync-error {
 		color: var(--loss);
+	}
+	.hist-kpis {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 12px 32px;
+		margin: 4px 0 12px;
 	}
 	.head-row .seg {
 		flex-wrap: wrap;
