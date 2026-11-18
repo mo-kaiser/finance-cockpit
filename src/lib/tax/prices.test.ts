@@ -120,3 +120,20 @@ describe('computeTax mit Tageskursen', () => {
 		expect(r.holdingsEnd[0]!.unknownBySource!.external_in!.toString()).toBe('1');
 	});
 });
+
+describe('Anfangsbestand', () => {
+	it('nutzt angegebene Kosten, sonst den Tageswert (geschätzt)', () => {
+		const ledger = [
+			entry({ day: '2026-03-01', type: 'Opening Balance', buy_amount: '10', buy_cur: 'BGB', cost_eur: null }), // 10 × 5 USD ÷ 1,25 = 40
+			entry({ day: '2026-03-01', type: 'Opening Balance', buy_amount: '1', buy_cur: 'SOL', cost_eur: '70' })
+		];
+		const r = computeTax(ledger, fx, 'all', prices);
+		const bgb = r.holdingsEnd.find((x) => x.asset === 'BGB')!;
+		expect(bgb.costKnown.toString()).toBe('40');
+		expect(bgb.qtyEstimated!.toString()).toBe('10');
+		const sol = r.holdingsEnd.find((x) => x.asset === 'SOL')!;
+		expect(sol.costKnown.toString()).toBe('70');
+		expect(sol.qtyEstimated!.isZero()).toBe(true);
+		expect(r.warnings).toEqual([]);
+	});
+});

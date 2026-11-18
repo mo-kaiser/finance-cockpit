@@ -398,6 +398,16 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 				break;
 			}
 
+			case 'opening_in': {
+				// Nachgetragener Anfangsbestand (Kauf vor Beginn der Historie): angegebene Kosten,
+				// sonst Tageswert am angegebenen Datum – dann als geschätzt markiert.
+				if (!Bc) break;
+				const known = e.cost_eur != null && e.cost_eur !== '' ? new Decimal(e.cost_eur) : null;
+				const value = known ?? (USD_STABLE.has(Bc) ? valueEur(Bc, B, e.day, e) : priceEur(Bc, B, e.day));
+				acquire(Bc, B, value, e, cat, known === null && value !== null);
+				break;
+			}
+
 			case 'external_out':
 			case 'other_out': {
 				if (!Sc && !Fc) break;

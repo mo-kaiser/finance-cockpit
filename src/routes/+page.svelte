@@ -236,7 +236,8 @@
 							<td class="num muted">{pct(r.share)}</td>
 							<td class="num" title={r.costNote ?? ''}>
 								{r.costEur ? money(r.costEur, 'EUR') : '–'}
-								{#if r.costEur && r.costNote?.startsWith('Einstand für')}<div class="note">teils geschätzt</div>{/if}
+								{#if r.costEur && r.covered}<div class="note">für {Math.round(r.covered * 100)} % des Bestands</div>
+								{:else if r.costEur && r.costNote?.includes('geschätzt')}<div class="note">teils geschätzt</div>{/if}
 							</td>
 							<td class="num {tone(r.unrealizedEur)}" title={r.costNote ?? ''}>
 								{#if r.unrealizedEur}{money(r.unrealizedEur, 'EUR', { sign: true })}{:else}<span class="note">{r.costNote ? (r.costNote.includes('ohne bekannte') ? 'Einstand teils unbekannt' : r.costNote.startsWith('Historie') ? 'Bestand ≠ Historie' : r.costNote) : '–'}</span>{/if}

@@ -17,7 +17,12 @@ export interface LedgerEntry {
 	comment: string | null;
 	/** Anzahl zusammengefasster Rohzeilen (Zinsen pro Tag und Coin), sonst 1. */
 	n: number;
+	/** Nur Anfangsbestand (manual_adjustments): bekannte Anschaffungskosten in EUR, null = Tageswert schätzen */
+	cost_eur?: string | null;
 }
+
+/** Buchungsart für Anfangsbestände aus manual_adjustments */
+export const OPENING_TYPE = 'Opening Balance';
 
 export type Category =
 	| 'kap_pnl'
@@ -32,6 +37,7 @@ export type Category =
 	| 'external_in'
 	| 'external_out'
 	| 'transfer'
+	| 'opening_in'
 	| 'unknown';
 
 export const CATEGORY_LABEL: Record<Category, string> = {
@@ -47,5 +53,6 @@ export const CATEGORY_LABEL: Record<Category, string> = {
 	external_in: 'Einzahlung von außen',
 	external_out: 'Auszahlung nach außen',
 	transfer: 'Interne Umbuchung',
+	opening_in: 'Anfangsbestand (nachgetragen)',
 	unknown: 'Nicht zugeordnet'
 };

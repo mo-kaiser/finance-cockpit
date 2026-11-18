@@ -1,4 +1,4 @@
-import type { Category, LedgerEntry } from './types';
+import { OPENING_TYPE, type Category, type LedgerEntry } from './types';
 
 /**
  * Ordnet eine CoinTracking-Buchung (Bitget) einem Steuertopf zu.
@@ -9,6 +9,8 @@ export function classify(e: LedgerEntry): Category {
 	const type = e.type;
 	const comment = e.comment ?? '';
 	const account = e.exchange.toLowerCase();
+
+	if (type === OPENING_TYPE) return 'opening_in';
 
 	// Ein- und Auszahlungen: extern nur bei echten Wallet-Bewegungen, sonst Umbuchung zwischen Bitget-Konten
 	if (type === 'Deposit' || type === 'Withdrawal') {

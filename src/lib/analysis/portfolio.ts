@@ -33,6 +33,8 @@ export interface PortfolioRow {
 	costEur: Decimal | null; // anteiliger Einstand für die angezeigte Menge
 	unrealizedEur: Decimal | null;
 	costNote: string | null;
+	/** Anteil des Bestands, für den Einstand/Unrealisiert gelten (null = ganz) */
+	covered: number | null;
 }
 
 /** Herkunft von Beständen ohne bekannte Kosten */
@@ -83,6 +85,8 @@ export function buildPortfolio(
 	}
 	// On-Chain-Earn: nur ergänzen, was die Übersicht nicht schon enthält; Kurs aus Bitgets USDT-Wert
 	const impliedPrice: Record<string, Decimal> = {};
+	const stakedOnChain = new Set<string>();
+	if (live.elite?.ok) for (const e of live.elite.data) stakedOnChain.add(e.underlying || e.coin), stakedOnChain.add(e.coin);
 	if (live.elite?.ok) {
 		for (const e of live.elite.data) {
 			if (earnCoins.has(e.coin)) continue;
@@ -107,10 +111,13 @@ export function buildPortfolio(
 		const valueUsdt = p ? qty.mul(p) : null;
 		const valueEur = valueUsdt && eurPerUsdt ? valueUsdt.mul(eurPerUsdt) : null;
 
-		// Einstand: nur wenn die Historie die Menge erklärt und alle Kosten bekannt sind
+		// Einstand aus der Historie (FIFO über alle Bitget-Konten). Erklärt die Historie weniger als den
+		// Bestand, gilt der Einstand nur für den gebuchten Teil; der Rest hat keine Buchung (Kauf vor Beginn
+		// der Historie oder noch nicht ausgezahlte On-Chain-Erträge).
 		const h = cost.get(coin);
 		const liveTotal = byAccount.spot.add(byAccount.earn).add(byAccount.futures);
 		let costEur: Decimal | null = null;
+		let covered = new Decimal(1); // gebuchter Anteil am Bestand
 		let costNote: string | null = null;
 		if (!h) costNote = 'keine Anschaffung in den Daten';
 		else if (!h.qtyCostUnknown.isZero()) {
@@ -118,16 +125,22 @@ export function buildPortfolio(
 				.map(([src, q]) => `${q!.toSignificantDigits(6)} ${SOURCE_LABEL[src] ?? src}`)
 				.join(', ');
 			costNote = `ohne bekannte Kosten: ${why || h.qtyCostUnknown.toSignificantDigits(6)}`;
-		}
-		else {
-			const diff = h.qty.sub(liveTotal).abs();
+		} else if (!liveTotal.isZero()) {
 			const tol = Decimal.max(liveTotal.mul('0.01'), new Decimal('0.000001'));
-			if (diff.gt(tol)) costNote = `Historie ${h.qty.toSignificantDigits(8)} ≠ Bestand`;
-			else {
-				costEur = h.costKnown.mul(qty).div(h.qty);
-				if (h.qtyEstimated && !h.qtyEstimated.isZero())
-					costNote = `Einstand für ${h.qtyEstimated.toSignificantDigits(6)} geschätzt (Tageswert bei Einzahlung bzw. Umtausch)`;
-			}
+			const gap = liveTotal.sub(h.qty);
+			const avg = h.costKnown.div(h.qty);
+			const notes: string[] = [];
+			if (gap.gt(tol)) {
+				covered = h.qty.div(liveTotal);
+				notes.push(
+					`Einstand nur für ${h.qty.toSignificantDigits(6)} von ${liveTotal.toSignificantDigits(6)}: ${gap.toSignificantDigits(4)} ohne Buchung` +
+						(stakedOnChain.has(coin) ? ' (vermutlich noch nicht ausgezahlte On-Chain-Staking-Erträge)' : ' (Kauf vor Beginn der Historie? → Anfangsbestand nachtragen)')
+				);
+			} else if (gap.neg().gt(tol)) notes.push(`Historie ${h.qty.toSignificantDigits(8)} > Bestand`);
+			costEur = avg.mul(qty).mul(covered);
+			if (h.qtyEstimated && !h.qtyEstimated.isZero())
+				notes.push(`Einstand für ${h.qtyEstimated.toSignificantDigits(6)} geschätzt (Tageswert bei Einzahlung bzw. Umtausch)`);
+			costNote = notes.length ? notes.join(' · ') : null;
 		}
 		rows.push({
 			coin,
@@ -139,7 +152,8 @@ export function buildPortfolio(
 			share: null,
 			computedQty: all && h ? h.qty : (h?.qty ?? null),
 			costEur,
-			unrealizedEur: costEur && valueEur ? valueEur.sub(costEur) : null,
+			unrealizedEur: costEur && valueEur ? valueEur.mul(covered).sub(costEur) : null,
+			covered: covered.lt(1) ? covered.toNumber() : null,
 			costNote
 		});
 	}
