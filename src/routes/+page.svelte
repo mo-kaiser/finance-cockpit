@@ -8,6 +8,9 @@
 	import { FxTable } from '$lib/tax/fx';
 	import { PriceTable } from '$lib/tax/prices';
 	import { onChainStaked } from '$lib/analysis/reconcile';
+	import { valueHistory, type ValuePoint } from '$lib/analysis/history';
+	import { USD_STABLE } from '$lib/tax/assets';
+	import LineChart from '$lib/components/LineChart.svelte';
 	import { ago, assessSync, berlin } from '$lib/monitor/health';
 	import { buildMovements, shortAddr, type Bucket } from '$lib/analysis/transfers';
 
@@ -133,6 +136,77 @@
 	const D = (s: string) => new Decimal(s || 0);
 
 	const sync = $derived(data.syncRuns ? assessSync(data.syncRuns) : null);
+
+	// Wertverlauf: Bestand aus den Buchungen × Tageskurs, bis gestern (heutiger Kurs steht erst morgen fest)
+	const RANGES = [
+		{ key: '3m', label: '3 Monate', days: 92 },
+		{ key: '1y', label: '1 Jahr', days: 366 },
+		{ key: 'ytd', label: String(new Date().getFullYear()), days: 0 },
+		{ key: 'all', label: 'Alle', days: Infinity }
+	] as const;
+	let range = $state<(typeof RANGES)[number]['key']>('1y');
+	const history = $derived(
+		data.ledger && fx.size && priceTable.coins.length
+			? valueHistory(data.ledger.ledger, fx, priceTable, new Date(Date.now() - 86_400_000).toISOString().slice(0, 10))
+			: null
+	);
+	// Heutiger Punkt = Live-Gesamtwert aller Konten (wie „Bestände“), dazu die Zerlegung des Abstands zum gestrigen Punkt
+	const allPortfolio = $derived(
+		data.live
+			? buildPortfolio(
+					data.live,
+					eurPerUsdt,
+					tax?.holdingsEnd ?? [],
+					new Set(['spot', 'earn', 'futures'] as Account[]),
+					data.ledger ? onChainStaked(data.ledger.ledger, data.live) : undefined
+				)
+			: null
+	);
+	const histGap = $derived.by(() => {
+		const last = history?.points.at(-1);
+		if (!last || !allPortfolio?.totalEur || !eurPerUsdt) return null;
+		let priceUsdt = new Decimal(0); // gebuchte Menge × Kursänderung seit gestern
+		let qtyUsdt = new Decimal(0); // nicht gebuchte Menge × aktueller Kurs (Staking-Erträge, Futures-Guthaben …)
+		for (const r of allPortfolio.rows) {
+			if (!r.price) continue;
+			const booked = r.computedQty ?? new Decimal(0);
+			const close = USD_STABLE.has(r.coin) ? r.price : (priceTable.closeFor(r.coin, last.day)?.close ?? null);
+			if (close === null) {
+				qtyUsdt = qtyUsdt.add(r.qty.mul(r.price));
+				continue;
+			}
+			priceUsdt = priceUsdt.add(booked.mul(r.price.sub(close)));
+			qtyUsdt = qtyUsdt.add(r.qty.sub(booked).mul(r.price));
+		}
+		const total = allPortfolio.totalEur.toNumber() - last.valueEur;
+		const price = priceUsdt.mul(eurPerUsdt).toNumber();
+		const qtyEur = qtyUsdt.mul(eurPerUsdt).toNumber();
+		return { live: allPortfolio.totalEur.toNumber(), total, price, qty: qtyEur, rest: total - price - qtyEur };
+	});
+	const histPoints = $derived.by((): (ValuePoint & { live?: boolean })[] => {
+		if (!history) return [];
+		const last = history.points.at(-1);
+		return histGap && last
+			? [...history.points, { day: new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' }), valueEur: histGap.live, investedEur: last.investedEur, live: true }]
+			: history.points;
+	});
+	const histShown = $derived.by(() => {
+		if (!history) return [];
+		const r = RANGES.find((x) => x.key === range)!;
+		const from =
+			r.key === 'ytd'
+				? `${new Date().getFullYear()}-01-01`
+				: r.days === Infinity
+					? ''
+					: new Date(Date.now() - r.days * 86_400_000).toISOString().slice(0, 10);
+		return histPoints.filter((p) => p.day >= from);
+	});
+	const histFirst = $derived(histShown[0] ?? null);
+	const histLast = $derived(histShown.at(-1) ?? null);
+	/** Wertänderung im Zeitraum ohne Ein-/Auszahlungen = Ergebnis */
+	const histResult = $derived(histFirst && histLast ? histLast.valueEur - histFirst.valueEur - (histLast.investedEur - histFirst.investedEur) : null);
+	const eurFmt = (v: number) => v.toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+	const dayDe = (d: string) => `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(2, 4)}`;
 
 	// Ein- und Auszahlungen / Umbuchungen
 	const FILTERS: { key: Bucket | 'all'; label: string }[] = [
@@ -309,6 +383,58 @@
 	<p class="muted">Lade Bestände …</p>
 {/if}
 
+{#if history && histShown.length > 1}
+	<section class="card" style="margin-top:16px">
+		<div class="head-row">
+			<div class="card-title">Wertverlauf</div>
+			<div class="seg" role="group" aria-label="Zeitraum">
+				{#each RANGES as r (r.key)}
+					<button aria-pressed={range === r.key} onclick={() => (range = r.key)}>{r.label}</button>
+				{/each}
+			</div>
+		</div>
+		<div class="hist-kpis">
+			<div>
+				<div class="muted small">{histLast!.live ? 'Wert heute (live)' : `Wert am ${dayDe(histLast!.day)}`}</div>
+				<strong>{eurFmt(histLast!.valueEur)}</strong>
+			</div>
+			<div>
+				<div class="muted small">Ein-/Auszahlungen im Zeitraum</div>
+				<strong>{eurFmt(histLast!.investedEur - histFirst!.investedEur)}</strong>
+			</div>
+			<div>
+				<div class="muted small">Ergebnis im Zeitraum</div>
+				<strong class={tone(histResult)}>{histResult! >= 0 ? '+' : ''}{eurFmt(histResult!)}</strong>
+			</div>
+		</div>
+		<LineChart
+			labels={histShown.map((p) => (p.live ? 'heute' : dayDe(p.day)))}
+			values={histShown.map((p) => p.valueEur)}
+			values2={histShown.map((p) => p.investedEur)}
+			label="Wert"
+			label2="Netto eingezahlt"
+			fill={false}
+			format={eurFmt}
+			height={260}
+		/>
+		<p class="small muted">
+			Grün: Wert aller Coins laut Buchungen × Bitget-Tagesschlusskurs (in EUR über den EZB-Kurs). Blau gestrichelt: Netto
+			eingezahlt seit Beginn der Historie (Einzahlungen, Euro-Überweisungen und Anfangsbestände minus Auszahlungen, je zum
+			Tageswert). Ergebnis = Wertänderung ohne Ein-/Auszahlungen. Bis gestern rechnet die Kurve mit den gebuchten Mengen und
+			Tagesschlusskursen; der letzte Punkt „heute“ ist der Live-Gesamtwert wie unter Bestände.
+			{#if histGap}
+				Abstand heute zu gestern: {histGap.total >= 0 ? '+' : ''}{eurFmt(histGap.total)} = Kursänderung seit gestern
+				{histGap.price >= 0 ? '+' : ''}{eurFmt(histGap.price)} · nicht gebuchte Mengen (noch nicht ausgezahlte
+				Staking-Erträge, offene Futures-Positionen, Earn-Zinsen seit dem letzten Abruf)
+				{histGap.qty >= 0 ? '+' : ''}{eurFmt(histGap.qty)}{#if Math.abs(histGap.rest) >= 1}{' · '}Sonstiges {histGap.rest >= 0 ? '+' : ''}{eurFmt(histGap.rest)}{/if}.
+			{/if}
+			{#if history.unpriced.length}
+				Ohne Kurs und daher nicht in der Kurve: {history.unpriced.slice(0, 5).join(', ')}{history.unpriced.length > 5 ? ' …' : '.'}
+			{/if}
+		</p>
+	</section>
+{/if}
+
 {#if data.ledger}
 	<section class="card" style="margin-top:16px">
 		<div class="head-row">
@@ -410,6 +536,12 @@
 	}
 	.sync-error {
 		color: var(--loss);
+	}
+	.hist-kpis {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 12px 32px;
+		margin: 4px 0 12px;
 	}
 	.head-row .seg {
 		flex-wrap: wrap;

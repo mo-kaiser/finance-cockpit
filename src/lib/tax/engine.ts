@@ -149,7 +149,12 @@ export function holdingEnd(acquiredDay: string): string {
  *   bewertet (§ 22 Nr. 3, zugleich Anschaffungskosten des Zins-Bestands) und Tausch Coin gegen Coin
  *   mit dem Tagesschlusskurs geschätzt.
  */
-export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'all', prices?: PriceTable): TaxResult {
+export interface TaxOptions {
+	/** Nach dem letzten Ereignis jedes Tages: Menge je Coin (FIFO-Bestand über alle Konten). Für den Wertverlauf. */
+	onDayEnd?: (day: string, qty: ReadonlyMap<string, Decimal>) => void;
+}
+
+export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'all', prices?: PriceTable, opts: TaxOptions = {}): TaxResult {
 	const yStart = year === 'all' ? '0000-01-01' : `${year}-01-01`;
 	const yEnd = year === 'all' ? '9999-12-31' : `${year}-12-31`;
 	const inYear = (day: string) => day >= yStart && day <= yEnd;
@@ -190,9 +195,16 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 		return usdt === null ? null : fx.usdToEur(usdt, day);
 	};
 
+	/** Laufende Menge je Coin (nur für onDayEnd) */
+	const qtyNow = new Map<string, Decimal>();
+	const track = (a: string, d: Decimal) => {
+		if (opts.onDayEnd) qtyNow.set(a, (qtyNow.get(a) ?? ZERO).add(d));
+	};
+
 	const acquire = (a: string, qty: Decimal, cost: Decimal | null, e: LedgerEntry, cat: Category, estimated = false) => {
 		if (a === FIAT_EUR || qty.lte(0)) return;
 		pool(a).lots.push({ qty, cost, day: e.day, txId: e.tx_id, estimated, source: cat });
+		track(a, qty);
 	};
 
 	/** Entnimmt Menge nach FIFO. Liefert die entnommenen Teilmengen und einen etwaigen Fehlbestand. */
@@ -210,6 +222,7 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 			rest = rest.sub(q);
 			if (lot.qty.lte(0)) p.head++;
 		}
+		track(a, rest.sub(qty));
 		return { parts, shortfall: rest };
 	};
 
@@ -303,8 +316,11 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 
 	const sorted = [...ledger].sort((a, b) => (a.ts === b.ts ? a.tx_id.localeCompare(b.tx_id) : a.ts < b.ts ? -1 : 1));
 
+	let curDay: string | null = null;
 	for (const e of sorted) {
 		if (e.day > yEnd) break;
+		if (opts.onDayEnd && curDay !== null && e.day !== curDay) opts.onDayEnd(curDay, qtyNow);
+		curDay = e.day;
 		if (!holdingsStart && e.day >= yStart) holdingsStart = snapshotHoldings();
 
 		const cat = classify(e);
@@ -436,6 +452,7 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 		}
 	}
 
+	if (opts.onDayEnd && curDay !== null) opts.onDayEnd(curDay, qtyNow);
 	holdingsStart ??= snapshotHoldings();
 	const holdingsEnd = snapshotHoldings();
 
