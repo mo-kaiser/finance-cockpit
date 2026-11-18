@@ -11,6 +11,10 @@ interface Slim {
 	bt: string | null;
 	ty: string | null;
 	side: string | null;
+	/** KuCoin: bizType, accountType, direction */
+	kbt: string | null;
+	kacc: string | null;
+	kdir: string | null;
 }
 
 /** Buchungsarten in den gespeicherten Bitget-Rohdaten: Anzahl, Zeitraum, Beispiel. */
@@ -23,8 +27,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 	for (let from = 0; ; from += 1000) {
 		const { data, error: e } = await db
 			.from('api_records')
-			.select('endpoint,record_id,ts,gt:raw->>groupType,bt:raw->>businessType,ty:raw->>type,side:raw->>tradeSide')
-			.eq('source', 'bitget')
+			.select('endpoint,record_id,ts,gt:raw->>groupType,bt:raw->>businessType,ty:raw->>type,side:raw->>tradeSide,kbt:raw->>bizType,kacc:raw->>accountType,kdir:raw->>direction')
+			.in('source', ['bitget', 'kucoin'])
 			.order('id')
 			.range(from, from + 999);
 		if (e) error(500, e.message);
@@ -37,7 +41,8 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 	const groups = new Map<string, { endpoint: string; group: string | null; kind: string; n: number; afterCt: number; first: string; last: string; sampleId: string }>();
 	for (const r of rows) {
-		const kind = r.bt ?? r.ty ?? r.side ?? '–';
+		const kind = r.kbt ? `${r.kbt} (${r.kdir ?? ''})` : (r.bt ?? r.ty ?? r.side ?? '–');
+		if (r.kacc) r.gt = r.kacc;
 		const k = `${r.endpoint}|${r.gt ?? ''}|${kind}`;
 		const g = groups.get(k);
 		const after = ctEnd !== null && r.ts > ctEnd ? 1 : 0;
