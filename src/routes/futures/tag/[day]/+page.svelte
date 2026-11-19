@@ -6,11 +6,19 @@
 	import { dayLabel, money, pct, qty, tone } from '#lib/format.ts';
 	import { FxTable } from '#lib/tax/fx.ts';
 
+	import BrokerSelect from '#lib/components/BrokerSelect.svelte';
+	import { brokerState, ledgerFor } from '#lib/broker.svelte.ts';
+	import { venueOf } from '#lib/tax/types.ts';
+
 	let { data } = $props();
+
+	// Börsen-Auswahl: Futures gibt es derzeit nur bei Bitget
+	const hasKucoin = $derived(data.ledger.some((e) => venueOf(e) === 'kucoin'));
+	const broker = $derived(hasKucoin ? brokerState.value : 'Bitget');
 
 	const cur = $derived<Currency>(page.url.searchParams.get('cur') === 'EUR' ? 'EUR' : 'USDT');
 	const fx = $derived(new FxTable(data.fx));
-	const all = $derived(futuresEvents(data.ledger, fx));
+	const all = $derived(futuresEvents(ledgerFor(broker, data.ledger), fx));
 	const events = $derived(inRange(all, data.day, data.day));
 	const s = $derived(futuresStats(events, cur));
 

@@ -22,6 +22,13 @@ export interface ReconcileRow {
  * Dort wachsen die Erträge im Produkt an und werden erst beim Beenden gebucht.
  */
 export function onChainStaked(ledger: LedgerEntry[], live?: LiveData): Set<string> {
+	const out = new Set([...onChainNet(ledger)].filter(([, q]) => q.gt(0)).map(([c]) => c));
+	if (live?.elite?.ok) for (const e of live.elite.data) out.add(e.underlying || e.coin).add(e.coin);
+	return out;
+}
+
+/** Netto im Bitget-On-Chain-Staking gebundene Menge je Coin laut Buchungen (pos_…_out minus pos_…_in) */
+export function onChainNet(ledger: LedgerEntry[]): Map<string, Decimal> {
 	const net = new Map<string, Decimal>();
 	for (const e of ledger) {
 		if (e.exchange !== 'Bitget Spot') continue;
@@ -35,9 +42,7 @@ export function onChainStaked(ledger: LedgerEntry[], live?: LiveData): Set<strin
 			net.set(c, (net.get(c) ?? new Decimal(0)).sub(e.buy_amount ?? 0));
 		}
 	}
-	const out = new Set([...net].filter(([, q]) => q.gt(0)).map(([c]) => c));
-	if (live?.elite?.ok) for (const e of live.elite.data) out.add(e.underlying || e.coin).add(e.coin);
-	return out;
+	return net;
 }
 
 export function reconcile(

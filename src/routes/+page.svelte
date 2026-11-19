@@ -2,7 +2,7 @@
 	import Decimal from 'decimal.js';
 	import { invalidate } from '$app/navigation';
 	import { futuresEvents, futuresStats, inRange } from '#lib/analysis/futures.ts';
-	import { buildPortfolio, mergeLive, type Account } from '#lib/analysis/portfolio.ts';
+	import { buildPortfolio, type Account } from '#lib/analysis/portfolio.ts';
 	import { money, pct, qty, tone } from '#lib/format.ts';
 	import { computeTax } from '#lib/tax/engine.ts';
 	import { FxTable } from '#lib/tax/fx.ts';
@@ -14,11 +14,13 @@
 	import { ago, assessSync, berlin } from '#lib/monitor/health.ts';
 	import { buildMovements, shortAddr, type Bucket } from '#lib/analysis/transfers.ts';
 
+	import BrokerSelect from '#lib/components/BrokerSelect.svelte';
+	import { brokerLabel, brokerState, holdingsFor, liveFor } from '#lib/broker.svelte.ts';
+
 	let { data } = $props();
 
 	// Börsen: Bitget, KuCoin (sobald eingerichtet) oder beide zusammen
-	const brokers = $derived(data.kucoin ? ['Alle', 'Bitget', 'KuCoin'] : ['Bitget']);
-	let broker = $state('Alle');
+	const broker = $derived(data.kucoin ? brokerState.value : 'Bitget');
 
 	const ACCOUNTS: { key: Account | 'all'; label: string }[] = [
 		{ key: 'all', label: 'Alle Konten' },
@@ -31,8 +33,8 @@
 	let refreshing = $state(false);
 
 	/** Live-Bestände der gewählten Börse(n) im Bitget-Format */
-	const liveAll = $derived(data.live && data.kucoin ? mergeLive(data.live, data.kucoin) : (data.live ?? data.kucoin));
-	const live = $derived(!data.kucoin ? data.live : broker === 'KuCoin' ? data.kucoin : broker === 'Bitget' ? data.live : liveAll);
+	const liveAll = $derived(liveFor('Alle', data.live, data.kucoin));
+	const live = $derived(liveFor(broker, data.live, data.kucoin));
 
 	const fx = $derived(new FxTable(data.ledger?.fx ?? []));
 	const eurPerUsdt = $derived.by(() => {
@@ -50,7 +52,7 @@
 					live,
 					eurPerUsdt,
 					// Einstand aus dem FIFO-Bestand der gewählten Börse (FIFO wird je Börse geführt)
-					(broker === 'KuCoin' ? tax?.holdingsByVenue.kucoin : broker === 'Bitget' && data.kucoin ? tax?.holdingsByVenue.bitget : tax?.holdingsEnd) ?? [],
+					holdingsFor(broker, tax),
 					new Set(account === 'all' ? (['spot', 'earn', 'futures'] as Account[]) : [account]),
 					data.ledger && broker !== 'KuCoin' ? onChainStaked(data.ledger.ledger, data.live ?? undefined) : undefined
 				)
@@ -234,9 +236,7 @@
 <div class="page-head">
 	<h1>Dashboard</h1>
 	<div class="toolbar">
-		<select bind:value={broker} aria-label="Broker">
-			{#each brokers as b (b)}<option>{b}</option>{/each}
-		</select>
+		<BrokerSelect show={!!data.kucoin} />
 		<div class="seg" role="group" aria-label="Konto">
 			{#each ACCOUNTS as a (a.key)}
 				<button aria-pressed={account === a.key} onclick={() => (account = a.key)}>{a.label}</button>
@@ -331,7 +331,7 @@
 		</div>
 		{#if portfolio.unpriced.length}<p class="small muted">Ohne Kurs: {portfolio.unpriced.join(', ')}</p>{/if}
 		<p class="small muted">
-			Kurse und Bestände live von {broker === 'Alle' && data.kucoin ? 'Bitget und KuCoin' : broker} ({live ? new Date(live.at).toLocaleTimeString('de-DE') : ''}). Euro über den letzten EZB-Kurs. Einstand nach FIFO aus der Buchungshistorie – nur angezeigt, wenn die Historie den Bestand vollständig erklärt.
+			Kurse und Bestände live von {brokerLabel(broker)} ({live ? new Date(live.at).toLocaleTimeString('de-DE') : ''}). Euro über den letzten EZB-Kurs. Einstand nach FIFO aus der Buchungshistorie – nur angezeigt, wenn die Historie den Bestand vollständig erklärt.
 		</p>
 	</section>
 

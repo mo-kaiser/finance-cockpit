@@ -1,17 +1,28 @@
 import Decimal from 'decimal.js';
 import type { Holding } from '#lib/tax/engine.ts';
+import type { Venue } from '#lib/tax/types.ts';
 
 export type Account = 'spot' | 'earn' | 'futures';
 type Section<T> = { ok: true; data: T } | { ok: false; error: string };
+
+/** Earn-Position laut Börse; venue fehlt bei älteren Bitget-Antworten, raw = Originaldaten der Börse */
+export interface EarnItem {
+	coin: string;
+	qty: string;
+	/** Prozent p. a. */
+	apy: string;
+	venue?: Venue;
+	raw?: Record<string, unknown>;
+}
 
 /** Antwort von /api/bitget/live */
 export interface LiveData {
 	at: string;
 	spot: Section<{ coin: string; available: string; frozen: string; locked: string }[]>;
-	earnFlex: Section<{ coin: string; qty: string; apy: string }[]>;
-	earnFixed: Section<{ coin: string; qty: string; apy: string }[]>;
+	earnFlex: Section<EarnItem[]>;
+	earnFixed: Section<EarnItem[]>;
 	/** Earn-Konto gesamt je Coin (optional, neuere Antworten) */
-	earnAccount?: Section<{ coin: string; qty: string }[]>;
+	earnAccount?: Section<{ coin: string; qty: string; venue?: Venue }[]>;
 	/** On-Chain-Earn (Elite), Wert in USDT von Bitget */
 	elite?: Section<{ coin: string; qty: string; valueUsdt: string; underlying: string; underlyingQty: string; apr: string }[]>;
 	futures: Section<{ marginCoin: string; available: string; locked: string; accountEquity: string; usdtEquity: string; unrealizedPL: string }[]>;
