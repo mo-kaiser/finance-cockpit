@@ -41,13 +41,14 @@ async function earn(periodType: 'flexible' | 'fixed') {
 		coin: str(r.productCoin ?? r.coin ?? r.interestCoin),
 		qty: str(r.holdAmount ?? r.amount ?? r.totalAmount),
 		apy: str((Array.isArray(r.apy) ? (r.apy as Raw[])[0]?.currentApy : r.apy) ?? ''),
+		venue: 'bitget' as const,
 		raw: r
 	}));
 }
 
 /** Earn-Konto gesamt je Coin (alle Earn-Produkte laut Bitget-Doku „earn account assets overview“). */
 async function earnAccount() {
-	return arr(await bitgetGet('/api/v2/earn/account/assets')).map((a) => ({ coin: str(a.coin), qty: str(a.amount) }));
+	return arr(await bitgetGet('/api/v2/earn/account/assets')).map((a) => ({ coin: str(a.coin), qty: str(a.amount), venue: 'bitget' as const }));
 }
 
 /** On-Chain-Earn („Elite“, z. B. BGETH/BGSOL/BGBTC/BGUSD) mit Wert in USDT. */

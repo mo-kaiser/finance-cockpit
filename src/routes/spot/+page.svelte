@@ -8,7 +8,14 @@
 	import { FxTable } from '#lib/tax/fx.ts';
 	import { PriceTable } from '#lib/tax/prices.ts';
 
+	import BrokerSelect from '#lib/components/BrokerSelect.svelte';
+	import { brokerHas, brokerState, holdingsFor, liveFor } from '#lib/broker.svelte.ts';
+
 	let { data } = $props();
+
+	const hasKucoin = $derived(!!data.kucoin || (data.ledger?.sources.kucoin ?? 0) > 0);
+	const broker = $derived(hasKucoin ? brokerState.value : 'Bitget');
+	const live = $derived(liveFor(broker, data.live, data.kucoin));
 
 	const fx = $derived(new FxTable(data.ledger?.fx ?? []));
 	const priceTable = $derived(new PriceTable(data.ledger?.prices ?? []));
@@ -17,9 +24,10 @@
 	let year = $state<string>('alle');
 	let withStable = $state(false);
 
-	const years = $derived(tax ? [...new Set(tax.disposals.map((d) => d.day.slice(0, 4)))].sort().reverse() : []);
+	const venueDisposals = $derived((tax?.disposals ?? []).filter((d) => brokerHas(broker, d.venue)));
+	const years = $derived([...new Set(venueDisposals.map((d) => d.day.slice(0, 4)))].sort().reverse());
 	const disposals = $derived(
-		(tax?.disposals ?? []).filter((d) => (withStable || !USD_STABLE.has(d.asset)) && (year === 'alle' || d.day.startsWith(year)))
+		venueDisposals.filter((d) => (withStable || !USD_STABLE.has(d.asset)) && (year === 'alle' || d.day.startsWith(year)))
 	);
 
 	const ZERO = new Decimal(0);
@@ -80,7 +88,7 @@
 		return r ? new Decimal(1).div(r.rate) : null;
 	});
 	const portfolio = $derived(
-		data.live && tax ? buildPortfolio(data.live, eurPerUsdt, tax.holdingsEnd, new Set(['spot', 'earn'] as const)) : null
+		live && tax ? buildPortfolio(live, eurPerUsdt, holdingsFor(broker, tax), new Set(['spot', 'earn'] as const)) : null
 	);
 	const unrealized = $derived(new Map((portfolio?.rows ?? []).map((r) => [r.coin, r])));
 	const unrealizedRows = $derived(
@@ -94,6 +102,7 @@
 <div class="page-head">
 	<h1>Spot</h1>
 	<div class="toolbar">
+		<BrokerSelect show={hasKucoin} />
 		<div class="seg" role="group" aria-label="Jahr">
 			<button aria-pressed={year === 'alle'} onclick={() => (year = 'alle')}>Gesamt</button>
 			{#each years as y (y)}<button aria-pressed={year === y} onclick={() => (year = y)}>{y}</button>{/each}
@@ -103,6 +112,7 @@
 </div>
 
 {#if data.ledgerError}<p class="error">{data.ledgerError}</p>{/if}
+{#if broker !== 'Bitget' && data.kucoinError}<p class="error small">KuCoin nicht erreichbar: {data.kucoinError}</p>{/if}
 
 {#if tax}
 	<div class="kpis">
@@ -178,7 +188,7 @@
 
 		<section class="card">
 			<div class="card-title">Aktuelle Bestände (Spot + Earn)</div>
-			{#if data.liveError}<p class="error small">{data.liveError}</p>{/if}
+			{#if broker !== 'KuCoin' && data.liveError}<p class="error small">{data.liveError}</p>{/if}
 			<table>
 				<thead><tr><th>Coin</th><th class="num">Wert</th><th class="num">Einstand</th><th class="num">Unrealisiert</th></tr></thead>
 				<tbody>
@@ -199,12 +209,13 @@
 		<div class="card-title">Letzte Verkäufe</div>
 		<div class="table-wrap">
 			<table>
-				<thead><tr><th>Datum</th><th>Coin</th><th class="num">Menge</th><th>gegen</th><th class="num">Erlös</th><th class="num">Einstand</th><th class="num">Ergebnis</th><th>Haltefrist</th></tr></thead>
+				<thead><tr><th>Datum</th>{#if broker === 'Alle'}<th>Börse</th>{/if}<th>Coin</th><th class="num">Menge</th><th>gegen</th><th class="num">Erlös</th><th class="num">Einstand</th><th class="num">Ergebnis</th><th>Haltefrist</th></tr></thead>
 				<tbody>
 					{#each [...disposals].reverse().slice(0, 50) as d (d.txId)}
 						{@const c = costOf(d)}
 						<tr>
 							<td>{d.day}</td>
+							{#if broker === 'Alle'}<td class="small">{d.venue === 'kucoin' ? 'KuCoin' : 'Bitget'}</td>{/if}
 							<td>{d.asset}</td>
 							<td class="num">{qty(d.qty, 6)}</td>
 							<td>{d.counter}</td>
@@ -220,7 +231,7 @@
 				</tbody>
 			</table>
 		</div>
-		<p class="small muted">Ergebnisse nach FIFO je Coin über alle Bitget-Konten, in EUR. Käufe mit USDT sind steuerlich Verkäufe von USDT; diese erscheinen nur mit „Stablecoins“.</p>
+		<p class="small muted">Ergebnisse nach FIFO je Coin und Börse (bei Bitget über Spot, Earn und Futures gemeinsam), in EUR. Käufe mit USDT sind steuerlich Verkäufe von USDT; diese erscheinen nur mit „Stablecoins“.</p>
 	</section>
 {:else if !data.ledgerError}
 	<p class="muted">Lade …</p>

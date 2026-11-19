@@ -1,3 +1,4 @@
+import Decimal from 'decimal.js';
 import { error, json } from '@sveltejs/kit';
 import { kucoinConfigured, kucoinGet, kucoinPaged, type KucoinError } from '#lib/server/kucoin.ts';
 import type { RequestHandler } from './$types';
@@ -42,26 +43,39 @@ export const GET: RequestHandler = async ({ locals }) => {
 	if (claims?.aal !== 'aal2') error(401, 'Nicht angemeldet');
 	if (!kucoinConfigured()) return json({ configured: false });
 
-	const [spot, earnAccount, tickers] = await Promise.all([
+	const [spot, holds, tickers] = await Promise.all([
 		safe(async () =>
 			(await kucoinGet<Raw[]>('/api/v1/accounts'))
 				.filter((a) => ['main', 'trade', 'trade_hf'].includes(str(a.type)) && Number(a.balance) > 0)
 				.map((a) => ({ coin: str(a.currency), available: str(a.available), frozen: str(a.holds), locked: '0' }))
 		),
-		safe(async () =>
-			(await kucoinPaged<Raw>('/api/v1/earn/hold-assets', {}, 500, 5))
-				.map((h) => ({ coin: str(h.currency), qty: str(h.holdAmount) }))
-				.filter((h) => Number(h.qty) > 0)
-		),
+		safe(async () => (await kucoinPaged<Raw>('/api/v1/earn/hold-assets', {}, 500, 5)).filter((h) => Number(h.holdAmount) > 0)),
 		safe(prices)
 	]);
+
+	// Earn-Positionen: returnRate ist ein Anteil (0,0347 = 3,47 % p. a.); DEMAND = flexibel, sonst mit Laufzeit
+	const item = (h: Raw) => ({
+		coin: str(h.currency),
+		qty: str(h.holdAmount),
+		apy: h.returnRate ? String(Number(h.returnRate) * 100) : '',
+		venue: 'kucoin' as const,
+		raw: h
+	});
+	const sec = <T,>(f: (rows: Raw[]) => T) => (holds.ok ? { ok: true as const, data: f(holds.data) } : holds);
+	const earnFlex = sec((rows) => rows.filter((h) => str(h.productType) === 'DEMAND').map(item));
+	const earnFixed = sec((rows) => rows.filter((h) => str(h.productType) !== 'DEMAND').map(item));
+	const earnAccount = sec((rows) => {
+		const m = new Map<string, Decimal>();
+		for (const h of rows) m.set(str(h.currency), (m.get(str(h.currency)) ?? new Decimal(0)).add(str(h.holdAmount) || 0));
+		return [...m].map(([coin, q]) => ({ coin, qty: q.toString(), venue: 'kucoin' as const }));
+	});
 
 	return json({
 		configured: true,
 		at: new Date().toISOString(),
 		spot,
-		earnFlex: { ok: true, data: [] },
-		earnFixed: { ok: true, data: [] },
+		earnFlex,
+		earnFixed,
 		earnAccount,
 		elite: { ok: true, data: [] },
 		futures: { ok: true, data: [] },
