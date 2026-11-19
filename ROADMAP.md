@@ -20,6 +20,8 @@ Stand: 19.11.2026 (KuCoin live). Reihenfolge = Empfehlung.
 
 ## 3. Inhaltliche Erweiterungen
 
+- [ ] **Seiten aufräumen** (als Nächstes, Wunsch Mo 19.11.): einheitlicher Aufbau von Dashboard, Futures, Spot, Earn (Kopfzeile → KPIs → „Jetzt“ → Verlauf → Auswertung → Einzelbuchungen → Lesehilfe); Futures-Karte „Aktuelle Positionen“. Schema in `claude/stand.md`
+
 - [ ] **Haltefrist-Kalender**: je Spot-Bestand das Datum, ab dem er steuerfrei ist; Verkaufs-Simulation („wenn ich heute X verkaufe, was ist steuerpflichtig?“)
 - [ ] **Steuerschätzung / Rücklage**: KAP-Saldo und SO-Ergebnis → grobe Steuerlast (Abgeltungsteuer, Soli, ggf. Kirchensteuer, Sparerpauschbetrag), klar als Schätzung gekennzeichnet
 - [ ] **Trading-Journal Futures**: Positionen aus Fills rekonstruieren (ab ca. 09/2025) – Eröffnung bis Schließung, Haltedauer, Ø-Preise, Gebühren und Funding je Position; Notizen und Tags je Trade (Setup, ICT-Konzept, Sitzung, Fehler) mit Auswertung je Tag
@@ -36,6 +38,7 @@ Stand: 19.11.2026 (KuCoin live). Reihenfolge = Empfehlung.
 - [x] Rohdaten in `api_records` (source `kucoin`), täglicher Abruf (live seit 18.11.2026, PR #11); Inventur 18.11.: Earn-Erträge, Earn-Anlagen, Umbuchungen, Spot (DASH, SUPRA), Kleinstbetrag → KCS, Auszahlung ETH
 - [x] Ledger: KuCoin aus CoinTracking (bis 08/2025) + API (ab 11/2025), Überweisungen zwischen Börsen verknüpft, FIFO je Börse (BMF 06.03.2025 walletbezogen) – live seit 19.11.2026 (PR #12)
 - [x] Dashboard Alle/Bitget/KuCoin, Korrekturen je Börse – live seit 19.11.2026
+- [x] Börsen-Auswahl auf Futures, Spot, Earn; Earn-Positionen; EZB-Kurse im täglichen Abruf – live seit 19.11.2026 (PR #13)
 - [x] Nachträge KuCoin (19.11.2026): AVAX, DOT, DASH als Anfangsbestand (von Cake/Bake, > 1 Jahr), DFI ausgebucht (delistet), FTM → S umgestellt (22.01.2025); KuCoin-Abgleich leer
 - [x] Korrekturen: Ausbuchung und Token-Umstellung als Nachtrag (Migration 20261119)
 - [x] Kurs-Cron: neue Coins direkt aus api_records (Fix „permission denied for view v_api_ledger“, 19.11.2026)
