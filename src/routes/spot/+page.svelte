@@ -9,8 +9,6 @@
 	import { PriceTable } from '#lib/tax/prices.ts';
 
 	import BrokerSelect from '#lib/components/BrokerSelect.svelte';
-	import RefreshButton from '#lib/components/RefreshButton.svelte';
-	import HelpBox from '#lib/components/HelpBox.svelte';
 	import { brokerHas, brokerState, holdingsFor, liveFor } from '#lib/broker.svelte.ts';
 
 	let { data } = $props();
@@ -110,7 +108,6 @@
 			{#each years as y (y)}<button aria-pressed={year === y} onclick={() => (year = y)}>{y}</button>{/each}
 		</div>
 		<label class="check"><input type="checkbox" bind:checked={withStable} /> Stablecoins (USDT, USDC)</label>
-		<RefreshButton />
 	</div>
 </div>
 
@@ -134,43 +131,16 @@
 			<div class="value {tone(unrealizedSum)}">{portfolio ? money(unrealizedSum, 'EUR', { sign: true }) : '–'}</div>
 			<div class="sub">Spot + Earn, Coins mit bekanntem Einstand</div>
 		</div>
-		<div class="kpi">
-			<div class="label">Bestandswert jetzt</div>
-			<div class="value">{portfolio ? money(portfolio.totalEur, 'EUR') : '–'}</div>
-			<div class="sub">Spot + Earn, live{portfolio ? ` · ${money(portfolio.totalUsdt, 'USDT', { digits: 0 })}` : ''}</div>
-		</div>
 	</div>
 
-	<section class="card block">
-		<div class="card-title">Aktuelle Bestände (Spot + Earn)</div>
-		{#if broker !== 'KuCoin' && data.liveError}<p class="error small">{data.liveError}</p>{/if}
-		<div class="table-wrap">
-		<table>
-			<thead><tr><th>Coin</th><th class="num">Wert</th><th class="num">Einstand</th><th class="num">Unrealisiert</th></tr></thead>
-			<tbody>
-				{#each unrealizedRows as r (r.coin)}
-					<tr>
-						<td>{r.coin}</td>
-						<td class="num">{money(r.valueEur)}</td>
-						<td class="num" title={r.costNote ?? ''}>{r.costEur ? money(r.costEur) : '–'}</td>
-						<td class="num {tone(r.unrealizedEur)}">{r.unrealizedEur ? money(r.unrealizedEur, 'EUR', { sign: true }) : ''}</td>
-					</tr>
-				{:else}
-					<tr><td colspan="4" class="muted">{live ? 'Keine Bestände über 1 USDT.' : 'Lade Bestände …'}</td></tr>
-				{/each}
-			</tbody>
-		</table>
-		</div>
-	</section>
-
 	{#if cumulative.length > 1}
-		<section class="card block">
+		<section class="card" style="margin-top:16px">
 			<div class="card-title">Kumuliert realisiert (EUR)</div>
 			<LineChart labels={cumulative.map((c) => c.day)} values={cumulative.map((c) => c.v)} format={(v) => `${v.toLocaleString('de-DE', { maximumFractionDigits: 0 })} €`} />
 		</section>
 	{/if}
 
-	<section class="card block">
+	<section class="card" style="margin-top:16px">
 		<div class="card-title">Nach Coin</div>
 		<div class="table-wrap">
 			<table>
@@ -203,8 +173,9 @@
 		{/if}
 	</section>
 
-	<section class="card block narrow-card">
-		<div class="card-title">Nach Jahr</div>
+	<div class="grid-2" style="margin-top:16px">
+		<section class="card">
+			<div class="card-title">Nach Jahr</div>
 			<table>
 				<thead><tr><th>Jahr</th><th class="num">Verkäufe</th><th class="num">Realisiert</th><th class="num">davon stpfl.</th></tr></thead>
 				<tbody>
@@ -213,9 +184,28 @@
 					{/each}
 				</tbody>
 			</table>
-	</section>
+		</section>
 
-	<section class="card block">
+		<section class="card">
+			<div class="card-title">Aktuelle Bestände (Spot + Earn)</div>
+			{#if broker !== 'KuCoin' && data.liveError}<p class="error small">{data.liveError}</p>{/if}
+			<table>
+				<thead><tr><th>Coin</th><th class="num">Wert</th><th class="num">Einstand</th><th class="num">Unrealisiert</th></tr></thead>
+				<tbody>
+					{#each unrealizedRows as r (r.coin)}
+						<tr>
+							<td>{r.coin}</td>
+							<td class="num">{money(r.valueEur)}</td>
+							<td class="num" title={r.costNote ?? ''}>{r.costEur ? money(r.costEur) : '–'}</td>
+							<td class="num {tone(r.unrealizedEur)}">{r.unrealizedEur ? money(r.unrealizedEur, 'EUR', { sign: true }) : ''}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</section>
+	</div>
+
+	<section class="card" style="margin-top:16px">
 		<div class="card-title">Letzte Verkäufe</div>
 		<div class="table-wrap">
 			<table>
@@ -241,23 +231,20 @@
 				</tbody>
 			</table>
 		</div>
+		<p class="small muted">Ergebnisse nach FIFO je Coin und Börse (bei Bitget über Spot, Earn und Futures gemeinsam), in EUR. Käufe mit USDT sind steuerlich Verkäufe von USDT; diese erscheinen nur mit „Stablecoins“.</p>
 	</section>
-
-	<HelpBox>
-		<ul>
-			<li><strong>Realisiert</strong>: Ergebnisse aller Spot-Verkäufe nach FIFO je Coin und Börse (bei Bitget über Spot, Earn und Futures gemeinsam), in EUR über den EZB-Tageskurs.</li>
-			<li><strong>Innerhalb Haltefrist</strong>: Verkäufe von Coins, die höchstens ein Jahr gehalten wurden – nur dieser Teil ist nach § 23 EStG steuerpflichtig.</li>
-			<li><strong>Unrealisiert</strong> und <strong>Bestandswert</strong>: aktuelle Spot- und Earn-Bestände live, Einstand aus der FIFO-Rechnung; in der Tabelle Beträge unter 1 USDT ausgeblendet.</li>
-			<li>Käufe mit USDT sind steuerlich Verkäufe von USDT; diese erscheinen nur mit „Stablecoins“.</li>
-			<li>„geschätzt“: Einstand über den Tageswert, weil der echte Kaufpreis fehlt (z. B. Einzahlungen von außen). Nachtragen auf der Seite Korrekturen.</li>
-		</ul>
-	</HelpBox>
 {:else if !data.ledgerError}
 	<p class="muted">Lade …</p>
 {/if}
 
 <style>
-	.narrow-card {
-		max-width: 640px;
+	.check {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin: 0;
+	}
+	.check input {
+		width: auto;
 	}
 </style>

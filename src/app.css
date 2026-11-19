@@ -296,33 +296,64 @@ th.num {
 	font-family: var(--font);
 }
 
-/* Einheitlicher Seitenaufbau: Abstand zwischen Blöcken, Kopfzeile in Karten, Lesehilfe */
+/* Seitenaufbau: Bereich „Jetzt“ (live) und „Auswertung“ (Zeitraum) */
 .block {
 	margin-top: 16px;
 }
 
-.head-row {
+.zone {
+	margin-top: 20px;
+}
+
+.zone-head {
 	display: flex;
 	justify-content: space-between;
-	align-items: baseline;
+	align-items: center;
 	gap: 12px;
 	flex-wrap: wrap;
+	margin-bottom: 10px;
 }
 
-.head-row .seg {
-	flex-wrap: wrap;
-	max-width: 100%;
-}
-
-.check {
+.zone-title {
+	font-size: 0.8rem;
+	font-weight: 600;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--muted);
 	display: flex;
 	align-items: center;
-	gap: 6px;
-	margin: 0;
+	gap: 8px;
 }
 
-.check input {
-	width: auto;
+.zone-title .stamp {
+	font-weight: 400;
+	letter-spacing: 0;
+	text-transform: none;
+}
+
+.zone-now {
+	background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
+	border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+	border-radius: var(--radius);
+	padding: 12px 14px 14px;
+}
+
+.zone-now .zone-title {
+	color: var(--accent);
+}
+
+.live-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--accent);
+}
+
+.zone-tools {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+	align-items: center;
 }
 
 details.help summary {

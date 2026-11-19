@@ -7,8 +7,6 @@
 	import { FxTable } from '#lib/tax/fx.ts';
 
 	import BrokerSelect from '#lib/components/BrokerSelect.svelte';
-	import RefreshButton from '#lib/components/RefreshButton.svelte';
-	import HelpBox from '#lib/components/HelpBox.svelte';
 	import { brokerHas, brokerState, ledgerFor, liveFor } from '#lib/broker.svelte.ts';
 	import { earnPositions } from '#lib/analysis/earn-positions.ts';
 	import { onChainNet } from '#lib/analysis/reconcile.ts';
@@ -106,7 +104,6 @@
 			<button aria-pressed={cur === 'EUR'} onclick={() => (cur = 'EUR')}>EUR</button>
 			<button aria-pressed={cur === 'USDT'} onclick={() => (cur = 'USDT')}>USDT</button>
 		</div>
-		<RefreshButton />
 	</div>
 </div>
 
@@ -137,7 +134,7 @@
 	</div>
 </div>
 
-<section class="card block">
+<section class="card" style="margin-top:16px">
 	<div class="card-title">Aktuelle Earn- und Staking-Positionen</div>
 	{#if !live}
 		<p class="muted small">Keine Live-Daten.</p>
@@ -191,13 +188,13 @@
 </section>
 
 {#if s.byMonth.length > 1}
-	<section class="card block">
+	<section class="card" style="margin-top:16px">
 		<div class="card-title">Erträge je Monat (zum heutigen Kurs)</div>
 		<BarChart labels={s.byMonth.map((m) => monthLabel(m.month))} values={s.byMonth.map((m) => conv(m.valueUsdt)?.toNumber() ?? 0)} format={fmtAxis} />
 	</section>
 {/if}
 
-<section class="card block">
+<section class="card" style="margin-top:16px">
 	<div class="card-title">Coins</div>
 	<div class="table-wrap">
 		<table>
@@ -239,31 +236,28 @@
 	{#if s.unpricedCoins.length}<p class="small muted">Ohne aktuellen Kurs (nicht im Wert enthalten): {s.unpricedCoins.join(', ')}</p>{/if}
 </section>
 
-<section class="card block narrow-card">
-	<div class="card-title">Nach Art</div>
-	<table>
-		<tbody>
-			{#each KINDS as k (k)}
-				<tr>
-					<td>{EARN_KIND_LABEL[k]}</td>
-					<td class="num">{fmt(s.byKind[k])}</td>
-					<td class="num muted">{!s.totalUsdt.isZero() ? pct(s.byKind[k].div(s.totalUsdt).toNumber(), 0) : ''}</td>
-				</tr>
-			{/each}
-		</tbody>
-	</table>
-</section>
+<div class="grid-2" style="margin-top:16px">
+	<section class="card">
+		<div class="card-title">Nach Art</div>
+		<table>
+			<tbody>
+				{#each KINDS as k (k)}
+					<tr>
+						<td>{EARN_KIND_LABEL[k]}</td>
+						<td class="num">{fmt(s.byKind[k])}</td>
+						<td class="num muted">{!s.totalUsdt.isZero() ? pct(s.byKind[k].div(s.totalUsdt).toNumber(), 0) : ''}</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	</section>
 
-<HelpBox>
-	<ul>
-		<li>Erträge sind alle Earn-Gutschriften (Zinsen, Staking, Airdrops, Boni) aus CoinTracking und dem täglichen Abruf von Bitget und KuCoin.</li>
-		<li>Bewertet wird mit dem <strong>heutigen</strong> Kurs. Der Wert am Tag des Zuflusses – maßgeblich für die Steuer (§ 22 Nr. 3 EStG) – steht auf der Steuer-Seite.</li>
-		<li>Die Rendite der letzten 30 Tage teilt die Erträge durch den heutigen Bestand; wurde im Zeitraum viel ein- oder ausgezahlt, ist sie nur eine Näherung.</li>
-	</ul>
-</HelpBox>
-
-<style>
-	.narrow-card {
-		max-width: 640px;
-	}
-</style>
+	<section class="card">
+		<div class="card-title">So sind die Zahlen zu lesen</div>
+		<ul class="small muted">
+			<li>Erträge sind alle Earn-Gutschriften (Zinsen, Staking, Airdrops, Boni) aus CoinTracking und dem täglichen Abruf von Bitget und KuCoin.</li>
+			<li>Bewertet wird mit dem <strong>heutigen</strong> Kurs. Der Wert am Tag des Zuflusses – maßgeblich für die Steuer – folgt mit den Tageskursen.</li>
+			<li>Die Rendite der letzten 30 Tage teilt die Erträge durch den heutigen Bestand; wurde im Zeitraum viel ein- oder ausgezahlt, ist sie nur eine Näherung.</li>
+		</ul>
+	</section>
+</div>
