@@ -1,6 +1,6 @@
 # Roadmap
 
-Stand: 19.11.2026. Reihenfolge = Empfehlung.
+Stand: 19.11.2026 (KuCoin live). Reihenfolge = Empfehlung.
 
 ## 1. Absicherung (zuerst)
 
@@ -34,9 +34,11 @@ Stand: 19.11.2026. Reihenfolge = Empfehlung.
 
 - [x] Eigener Read-Only-Key („General“), KuCoin global (nicht EU); API liefert Kontobuchungen 1 Jahr rückwirkend (ab 20.11.2025), Export max. 100 Tage – nicht nötig
 - [x] Rohdaten in `api_records` (source `kucoin`), täglicher Abruf (live seit 18.11.2026, PR #11); Inventur 18.11.: Earn-Erträge, Earn-Anlagen, Umbuchungen, Spot (DASH, SUPRA), Kleinstbetrag → KCS, Auszahlung ETH
-- [x] Ledger: KuCoin aus CoinTracking (bis 08/2025) + API (ab 11/2025), Überweisungen zwischen Börsen verknüpft, FIFO je Börse (BMF 06.03.2025 walletbezogen) – auf staging 19.11.2026
-- [x] Dashboard Alle/Bitget/KuCoin, Korrekturen je Börse – auf staging
-- [ ] Offen: DASH-Verkauf 18.01.2026 ohne Kauf in den Daten (Anfangsbestand KuCoin nachtragen), FTM → S (Sonic) Token-Umstellung 01/2025, DFI/XMR-Reste bei KuCoin klären
+- [x] Ledger: KuCoin aus CoinTracking (bis 08/2025) + API (ab 11/2025), Überweisungen zwischen Börsen verknüpft, FIFO je Börse (BMF 06.03.2025 walletbezogen) – live seit 19.11.2026 (PR #12)
+- [x] Dashboard Alle/Bitget/KuCoin, Korrekturen je Börse – live seit 19.11.2026
+- [x] Nachträge KuCoin (19.11.2026): AVAX, DOT, DASH als Anfangsbestand (von Cake/Bake, > 1 Jahr), DFI ausgebucht (delistet), FTM → S umgestellt (22.01.2025); KuCoin-Abgleich leer
+- [x] Korrekturen: Ausbuchung und Token-Umstellung als Nachtrag (Migration 20261119)
+- [x] Kurs-Cron: neue Coins direkt aus api_records (Fix „permission denied for view v_api_ledger“, 19.11.2026)
 - [ ] Optional: Tageskurse von KuCoin für Coins ohne Bitget-Kurs (z. B. KCS); Steuerberater: Bitget-Unterkonten als eine Wallet?
 
 ## 5. Technik (ohne Eile)
