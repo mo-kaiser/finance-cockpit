@@ -1,4 +1,4 @@
-import { OPENING_TYPE, type Category, type LedgerEntry } from './types';
+import { OPENING_TYPE, WRITE_OFF_TYPE, type Category, type LedgerEntry } from './types';
 
 /**
  * Ordnet eine Buchung (CoinTracking- bzw. API-Format, Bitget und KuCoin) einem Steuertopf zu.
@@ -11,6 +11,7 @@ export function classify(e: LedgerEntry): Category {
 	const account = e.exchange.toLowerCase();
 
 	if (type === OPENING_TYPE) return 'opening_in';
+	if (type === WRITE_OFF_TYPE) return 'write_off';
 
 	// Von linkTransfers() erkannte Umbuchungen (KuCoin intern, Börse ↔ Börse): steuerlich ohne Wirkung;
 	// die Engine lässt Bestände bei Überweisungen zwischen Börsen mit Kaufdatum und Einstand mitwandern.

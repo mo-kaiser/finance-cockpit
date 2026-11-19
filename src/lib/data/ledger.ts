@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { mapApiLedger, type ApiLedgerRow } from '#lib/tax/bitget-api.ts';
 import type { FxRow } from '#lib/tax/fx.ts';
 import type { PriceSeriesRow } from '#lib/tax/prices.ts';
-import { OPENING_TYPE, type LedgerEntry } from '#lib/tax/types.ts';
+import { OPENING_TYPE, SWAP_TYPE, WRITE_OFF_TYPE, type LedgerEntry } from '#lib/tax/types.ts';
 import { mapKucoinLedger, type KucoinRecordRow } from '#lib/tax/kucoin-api.ts';
 import { linkTransfers } from '#lib/tax/links.ts';
 
@@ -12,14 +12,21 @@ export interface LedgerData {
 	/** Tageskurse je Coin (leer, solange noch keine geladen sind) */
 	prices: PriceSeriesRow[];
 	pricesError: string | null;
-	/** Nachgetragene Anfangsbestände (manual_adjustments, kind opening_balance) */
+	/** Nachträge (manual_adjustments): Anfangsbestände, Ausbuchungen, Token-Umstellungen */
 	openings: OpeningBalance[];
 	sources: { cointracking: number; api: number; apiLast: string | null; kucoin?: number };
 	loadedAt: number;
 }
 
+export type AdjustmentKind = 'opening_balance' | 'write_off' | 'token_swap';
+
 export interface OpeningBalance {
 	id: string;
+	/** fehlt bei älteren Abfragen: dann Anfangsbestand */
+	kind?: AdjustmentKind;
+	/** Token-Umstellung: neuer Coin und Menge */
+	to_asset?: string | null;
+	to_amount?: string | null;
 	ts: string;
 	/** Börse: 'bitget' oder 'kucoin' */
 	venue?: string;
@@ -33,6 +40,25 @@ export interface OpeningBalance {
 /** Kalendertag in Europe/Berlin */
 export const berlinDay = (ts: string) => new Date(ts).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
 
+const venueAccount = (v?: string) => (v === 'kucoin' ? 'Kucoin Funding' : 'Bitget Spot');
+
+/** Nachtrag als Ledger-Buchung im FIFO-Topf der jeweiligen Börse */
+export const adjustmentEntry = (o: OpeningBalance): LedgerEntry => {
+	if (o.kind === 'write_off' || o.kind === 'token_swap') {
+		const swap = o.kind === 'token_swap';
+		return {
+			...openingEntry(o),
+			type: swap ? SWAP_TYPE : WRITE_OFF_TYPE,
+			buy_amount: swap ? (o.to_amount ?? null) : null,
+			buy_cur: swap ? (o.to_asset ?? null) : null,
+			sell_amount: o.amount,
+			sell_cur: o.asset,
+			cost_eur: null
+		};
+	}
+	return openingEntry(o);
+};
+
 /** Anfangsbestand als Ledger-Buchung im FIFO-Topf der jeweiligen Börse */
 export const openingEntry = (o: OpeningBalance): LedgerEntry => ({
 	tx_id: `manual:${o.id}`,
@@ -45,7 +71,7 @@ export const openingEntry = (o: OpeningBalance): LedgerEntry => ({
 	sell_cur: null,
 	fee_amount: null,
 	fee_cur: null,
-	exchange: o.venue === 'kucoin' ? 'Kucoin Funding' : 'Bitget Spot',
+	exchange: venueAccount(o.venue),
 	trade_group: null,
 	comment: o.note,
 	n: 1,
@@ -83,15 +109,22 @@ export function loadLedger(db: SupabaseClient, force = false): Promise<LedgerDat
 			.eq('quote', 'USDT')
 			.eq('source', 'bitget')
 			.then(({ data, error }) => ({ rows: (data ?? []) as PriceSeriesRow[], error: error?.message ?? null }));
-		const openingsP = db
-			.from('manual_adjustments')
-			.select('id, ts, venue, asset, amount::text, cost_eur::text, note, created_at')
-			.eq('kind', 'opening_balance')
-			.order('ts')
-			.then(({ data, error }) => {
-				if (error) throw new Error(`Anfangsbestände: ${error.message}`);
-				return (data ?? []) as unknown as OpeningBalance[];
-			});
+		const openingsP = (async () => {
+			const full = await db
+				.from('manual_adjustments')
+				.select('id, ts, venue, kind, asset, amount::text, cost_eur::text, to_asset, to_amount::text, note, created_at')
+				.in('kind', ['opening_balance', 'write_off', 'token_swap'])
+				.order('ts');
+			if (!full.error) return (full.data ?? []) as unknown as OpeningBalance[];
+			// Migration 20261119 noch nicht ausgeführt (Spalte to_asset fehlt): nur Anfangsbestände
+			const old = await db
+				.from('manual_adjustments')
+				.select('id, ts, venue, asset, amount::text, cost_eur::text, note, created_at')
+				.eq('kind', 'opening_balance')
+				.order('ts');
+			if (old.error) throw new Error(`Nachträge: ${old.error.message}`);
+			return (old.data ?? []) as unknown as OpeningBalance[];
+		})();
 		const [ct, api, fx, kcCt, kcApi] = await Promise.all([
 			pages<LedgerEntry>((a, b) => db.from('v_ledger').select('*').order('ts').order('tx_id').range(a, b), 'CoinTracking-Daten'),
 			pages<ApiLedgerRow>((a, b) => db.from('v_api_ledger').select('*').order('ts').order('tx_id').range(a, b), 'Bitget-API-Daten'),
@@ -134,7 +167,7 @@ export function loadLedger(db: SupabaseClient, force = false): Promise<LedgerDat
 		const openings = await openingsP;
 		cache = {
 			// Umbuchungen (KuCoin intern, KuCoin ↔ Bitget) verknüpfen, damit Bestände mit Kaufdatum mitwandern
-			ledger: linkTransfers([...openings.map(openingEntry), ...ct, ...apiEntries, ...kcCtEntries, ...kcApiEntries]),
+			ledger: linkTransfers([...openings.map(adjustmentEntry), ...ct, ...apiEntries, ...kcCtEntries, ...kcApiEntries]),
 			openings,
 			fx,
 			prices: pr.rows,

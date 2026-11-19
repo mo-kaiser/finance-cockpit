@@ -506,6 +506,14 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 				break;
 			}
 
+			case 'write_off': {
+				// Nachgetragene Ausbuchung (z. B. delisteter Token): Bestand verlässt den Topf ohne Erlös.
+				// Bewusst dokumentiert, daher keine Warnung; ein Delisting-Verlust wird nicht angesetzt.
+				if (!Sc || S.lte(0)) break;
+				consume(Sc, S, e);
+				break;
+			}
+
 			case 'swap_nontaxable': {
 				if (!Bc || !Sc || S.lte(0)) break;
 				const { parts, shortfall } = take(Sc, S);

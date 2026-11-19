@@ -40,6 +40,10 @@ export const VENUE_LABEL: Record<Venue, string> = { bitget: 'Bitget', kucoin: 'K
 
 /** Buchungsart für Anfangsbestände aus manual_adjustments */
 export const OPENING_TYPE = 'Opening Balance';
+/** Manuelle Ausbuchung (Delisting, Verlust): Abgang ohne Erlös */
+export const WRITE_OFF_TYPE = 'Write-off';
+/** Manuelle Token-Umstellung (z. B. FTM → S): Kaufdatum und Einstand wandern mit */
+export const SWAP_TYPE = 'Swap (non taxable)';
 
 export type Category =
 	| 'kap_pnl'
@@ -55,6 +59,7 @@ export type Category =
 	| 'external_out'
 	| 'transfer'
 	| 'opening_in'
+	| 'write_off'
 	| 'unknown';
 
 export const CATEGORY_LABEL: Record<Category, string> = {
@@ -71,5 +76,6 @@ export const CATEGORY_LABEL: Record<Category, string> = {
 	external_out: 'Auszahlung nach außen',
 	transfer: 'Interne Umbuchung',
 	opening_in: 'Anfangsbestand (nachgetragen)',
+	write_off: 'Ausbuchung (nachgetragen)',
 	unknown: 'Nicht zugeordnet'
 };

@@ -11,7 +11,7 @@ export const config = { maxDuration: 60 };
 /**
  * Täglicher Kursabruf (Vercel Cron, nach dem Bitget-Abruf):
  *   * alle Coins, für die schon Kurse vorliegen: die letzten Tage ergänzen
- *   * Coins, die in den letzten 10 Tagen neu in den Bitget-Buchungen auftauchen (z. B. neuer Airdrop): ab Erstauftreten
+ *   * Coins, die in den letzten 10 Tagen neu in den Bitget- oder KuCoin-Buchungen auftauchen (z. B. neuer Airdrop): ab Erstauftreten
  * Die Historie lädt man einmalig auf der System-Seite nach.
  */
 export const GET: RequestHandler = async ({ request }) => {
@@ -29,17 +29,24 @@ export const GET: RequestHandler = async ({ request }) => {
 		const todo = new Map<string, string>();
 		for (const s of status) if (s.last_day < yesterday) todo.set(s.coin, dayBefore(s.last_day, -1));
 
-		// neue Coins aus den API-Buchungen der letzten 10 Tage
+		// neue Coins aus den API-Buchungen der letzten 10 Tage (Bitget und KuCoin).
+		// Direkt aus api_records statt über v_api_ledger: die View ist nur für angemeldete Nutzer freigegeben.
 		const since = new Date(Date.now() - 10 * 86_400_000).toISOString();
-		const { data: recent, error: recErr } = await admin.from('v_api_ledger').select('coin, day').gte('ts', since);
-		if (recErr) throw new Error(`v_api_ledger: ${recErr.message}`);
+		const { data: recent, error: recErr } = await admin
+			.from('api_records')
+			.select('ts, coin:raw->>coin, currency:raw->>currency')
+			.gte('ts', since)
+			.limit(5000);
+		if (recErr) throw new Error(`api_records: ${recErr.message}`);
 		const known = new Set(status.map((s) => s.coin));
-		for (const r of (recent ?? []) as { coin: string | null; day: string }[]) {
-			if (!r.coin) continue;
-			const c = asset(r.coin);
+		for (const r of (recent ?? []) as { ts: string; coin: string | null; currency: string | null }[]) {
+			const raw = r.coin ?? r.currency;
+			if (!raw) continue;
+			const c = asset(raw);
 			if (c === FIAT_EUR || USD_STABLE.has(c) || known.has(c)) continue;
+			const day = new Date(r.ts).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
 			const prev = todo.get(c);
-			if (!prev || r.day < prev) todo.set(c, r.day);
+			if (!prev || day < prev) todo.set(c, day);
 		}
 
 		for (const [coin, from] of todo) {

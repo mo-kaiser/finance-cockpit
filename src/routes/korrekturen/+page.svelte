@@ -8,7 +8,6 @@
 	import { computeTax } from '#lib/tax/engine.ts';
 	import { FxTable } from '#lib/tax/fx.ts';
 	import { PriceTable } from '#lib/tax/prices.ts';
-	import { OPENING_TYPE } from '#lib/tax/types.ts';
 
 	let { data } = $props();
 
@@ -67,11 +66,17 @@
 	/** Erster Tag der Historie (ohne nachgetragene Anfangsbestände) = Standard-Kaufdatum */
 	const historyStart = $derived.by(() => {
 		let min = '';
-		for (const e of data.ledger?.ledger ?? []) if (e.type !== OPENING_TYPE && (!min || e.day < min)) min = e.day;
+		for (const e of data.ledger?.ledger ?? []) if (!e.tx_id.startsWith('manual:') && (!min || e.day < min)) min = e.day;
 		return min || '2023-01-01';
 	});
 
-	// Formular
+	// Formular: Anfangsbestand, Ausbuchung oder Token-Umstellung
+	type Mode = 'opening_balance' | 'write_off' | 'token_swap';
+	const MODE_LABEL: Record<Mode, string> = { opening_balance: 'Anfangsbestand', write_off: 'Ausbuchung', token_swap: 'Token-Umstellung' };
+	let mode = $state<Mode>('opening_balance');
+	let toCoin = $state('');
+	let toAmount = $state('');
+	const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
 	let venue = $state<V>('bitget');
 	let coin = $state('');
 	let amount = $state('');
@@ -82,13 +87,15 @@
 	let msg = $state('');
 	let err = $state('');
 
-	function take(r: { coin: string; gap: Decimal }, v: V = view) {
+	function take(r: { coin: string; gap: Decimal }, v: V = view, m: Mode = 'opening_balance') {
+		mode = m;
 		venue = v;
 		coin = r.coin;
-		amount = r.gap.toString();
+		amount = r.gap.abs().toString();
 		date = '';
 		cost = '';
-		note = 'Bestand vor Beginn der Historie (Abgleich mit Bitget)';
+		toCoin = toAmount = '';
+		note = m === 'opening_balance' ? `Bestand vor Beginn der Historie (Abgleich mit ${VNAME[v]})` : '';
 		msg = '';
 		err = '';
 		document.getElementById('form')?.scrollIntoView({ behavior: 'smooth' });
@@ -101,11 +108,14 @@
 		err = '';
 		msg = '';
 		const c = coin.trim().toUpperCase();
-		let a: Decimal, k: Decimal | null;
+		const tc = toCoin.trim().toUpperCase();
+		const dec = (s: string) => new Decimal(s.includes(',') ? num(s) : s.trim());
+		let a: Decimal, k: Decimal | null, ta: Decimal | null;
 		try {
 			// Eingabe mit Komma oder Punkt als Dezimaltrennzeichen
-			a = new Decimal(amount.includes(',') ? num(amount) : amount.trim());
-			k = cost.trim() ? new Decimal(cost.includes(',') ? num(cost) : cost.trim()) : null;
+			a = dec(amount);
+			k = mode === 'opening_balance' && cost.trim() ? dec(cost) : null;
+			ta = mode === 'token_swap' ? dec(toAmount || '0') : null;
 		} catch {
 			err = 'Menge oder Kosten sind keine gültige Zahl.';
 			return;
@@ -113,8 +123,15 @@
 		if (!/^[A-Z0-9]{1,20}$/.test(c)) return void (err = 'Bitte einen Coin wie BGB oder ETH angeben.');
 		if (a.lte(0)) return void (err = 'Die Menge muss größer als 0 sein.');
 		if (k && k.lt(0)) return void (err = 'Kosten dürfen nicht negativ sein.');
+		if (mode !== 'opening_balance' && !date) return void (err = 'Bitte das Datum angeben (ungefähr reicht).');
+		if (mode === 'token_swap') {
+			if (!/^[A-Z0-9]{1,20}$/.test(tc) || tc === c) return void (err = 'Bitte den neuen Coin angeben, z. B. S.');
+			if (!ta || ta.lte(0)) return void (err = 'Bitte die Menge des neuen Coins angeben.');
+		}
 		const day = date || historyStart;
 		busy = true;
+		const defaultNote =
+			mode === 'write_off' ? 'Ausbuchung (Delisting)' : mode === 'token_swap' ? `Token-Umstellung ${c} → ${tc}` : 'Anfangsbestand';
 		const { error } = await data.supabase.from('manual_adjustments').insert({
 			// Mittag UTC liegt sicher auf demselben Berliner Kalendertag
 			ts: new Date(`${day}T12:00:00Z`).toISOString(),
@@ -122,10 +139,12 @@
 			asset: c,
 			amount: a.toString(),
 			cost_eur: k ? k.toString() : null,
-			kind: 'opening_balance',
-			note: [note.trim() || 'Anfangsbestand', date ? '' : '(Kaufdatum unbekannt)', k ? '' : '(Kosten = Tageswert, geschätzt)']
-				.filter(Boolean)
-				.join(' ')
+			kind: mode,
+			...(mode === 'token_swap' ? { to_asset: tc, to_amount: ta!.toString() } : {}),
+			note:
+				mode === 'opening_balance'
+					? [note.trim() || defaultNote, date ? '' : '(Kaufdatum unbekannt)', k ? '' : '(Kosten = Tageswert, geschätzt)'].filter(Boolean).join(' ')
+					: note.trim() || defaultNote
 		});
 		if (error) {
 			busy = false;
@@ -133,7 +152,7 @@
 			return;
 		}
 		// Ohne Kosten wird der Tageswert gebraucht: Kurse ab dem Kaufdatum sicherstellen
-		if (!k && !USD_STABLE.has(c)) {
+		if (mode === 'opening_balance' && !k && !USD_STABLE.has(c)) {
 			msg = `${c}: lade Tageskurse ab ${day} …`;
 			await fetch('/api/prices/sync', {
 				method: 'POST',
@@ -141,8 +160,11 @@
 				body: JSON.stringify({ coin: c, from: day })
 			}).catch(() => null);
 		}
-		msg = `Anfangsbestand ${qty(a)} ${c} (${VNAME[venue]}) gespeichert.`;
-		coin = amount = date = cost = note = '';
+		msg =
+			mode === 'token_swap'
+				? `Token-Umstellung ${qty(a)} ${c} → ${qty(ta!)} ${tc} (${VNAME[venue]}) gespeichert.`
+				: `${MODE_LABEL[mode]} ${qty(a)} ${c} (${VNAME[venue]}) gespeichert.`;
+		coin = amount = date = cost = note = toCoin = toAmount = '';
 		clearLedgerCache();
 		await invalidate('app:korrekturen');
 		busy = false;
@@ -206,7 +228,8 @@
 								{:else}Kauf vor Beginn der Historie?{/if}
 							</td>
 							<td>
-								{#if r.gap.gt(0) && !r.onChain}<button class="ghost" onclick={() => take(r)}>Übernehmen</button>{/if}
+								{#if r.gap.gt(0) && !r.onChain}<button class="ghost" onclick={() => take(r)}>Übernehmen</button>
+								{:else if r.gap.lt(0)}<button class="ghost" onclick={() => take(r, view, 'write_off')}>Abgang eintragen</button>{/if}
 							</td>
 						</tr>
 					{/each}
@@ -251,7 +274,17 @@
 {/if}
 
 <section class="card" id="form" style="margin-top:16px">
-	<div class="card-title">Anfangsbestand nachtragen</div>
+	<div class="head-row">
+		<div class="card-title">Nachtragen</div>
+		<div class="seg" role="group" aria-label="Art">
+			{#each Object.keys(MODE_LABEL) as Mode[] as m (m)}<button type="button" aria-pressed={mode === m} onclick={() => (mode = m)}>{MODE_LABEL[m]}</button>{/each}
+		</div>
+	</div>
+	<p class="small muted" style="margin-top:4px">
+		{#if mode === 'opening_balance'}Coins, die du vor Beginn der Historie gekauft hast. Zählen wie ein Kauf.
+		{:else if mode === 'write_off'}Bestand, der ohne Erlös verschwunden ist, z. B. ein delisteter Token. Wird ohne Gewinn oder Verlust ausgebucht.
+		{:else}Umstellung eines Tokens auf einen neuen, z. B. FTM → S. Kein Verkauf: Kaufdatum und Einstand gehen auf den neuen Coin über.{/if}
+	</p>
 	<form onsubmit={save}>
 		<div class="grid-2">
 			{#if venues.length > 1}
@@ -264,52 +297,72 @@
 				<div></div>
 			{/if}
 			<div>
-				<label for="coin">Coin</label>
-				<input id="coin" bind:value={coin} placeholder="z. B. BGB" autocomplete="off" />
+				<label for="coin">{mode === 'token_swap' ? 'Alter Coin' : 'Coin'}</label>
+				<input id="coin" bind:value={coin} placeholder={mode === 'token_swap' ? 'z. B. FTM' : 'z. B. BGB'} autocomplete="off" />
 			</div>
 			<div>
 				<label for="amount">Menge</label>
 				<input id="amount" bind:value={amount} inputmode="decimal" placeholder="z. B. 193,8" />
 			</div>
-			<div>
-				<label for="date">Kaufdatum (optional)</label>
-				<input id="date" type="date" bind:value={date} max={historyStart} />
-				<p class="small muted" style="margin:4px 0 0">Leer = {dateDe(historyStart)} (Beginn der Historie)</p>
-			</div>
-			<div>
-				<label for="cost">Kosten in EUR (optional)</label>
-				<input id="cost" bind:value={cost} inputmode="decimal" placeholder="leer = Tageswert, geschätzt" />
-			</div>
+			{#if mode === 'token_swap'}
+				<div>
+					<label for="tocoin">Neuer Coin</label>
+					<input id="tocoin" bind:value={toCoin} placeholder="z. B. S" autocomplete="off" />
+				</div>
+				<div>
+					<label for="toamount">Menge neu</label>
+					<input id="toamount" bind:value={toAmount} inputmode="decimal" placeholder="bei 1 : 1 dieselbe Menge" />
+				</div>
+			{/if}
+			{#if mode === 'opening_balance'}
+				<div>
+					<label for="date">Kaufdatum (optional)</label>
+					<input id="date" type="date" bind:value={date} max={historyStart} />
+					<p class="small muted" style="margin:4px 0 0">Leer = {dateDe(historyStart)} (Beginn der Historie)</p>
+				</div>
+				<div>
+					<label for="cost">Kosten in EUR (optional)</label>
+					<input id="cost" bind:value={cost} inputmode="decimal" placeholder="leer = Tageswert, geschätzt" />
+				</div>
+			{:else}
+				<div>
+					<label for="date">Datum</label>
+					<input id="date" type="date" bind:value={date} max={today} />
+					<p class="small muted" style="margin:4px 0 0">Ungefähr reicht; nach der letzten Buchung des Coins</p>
+				</div>
+			{/if}
 		</div>
 		<label for="note">Notiz</label>
 		<input id="note" bind:value={note} placeholder="z. B. vor 08/2023 gekauft" />
-		<p style="margin-top:12px"><button type="submit" disabled={busy || !coin || !amount}>{busy ? 'Speichere …' : 'Speichern'}</button></p>
+		<p style="margin-top:12px"><button type="submit" disabled={busy || !coin || !amount || (mode !== 'opening_balance' && !date)}>{busy ? 'Speichere …' : 'Speichern'}</button></p>
 	</form>
 	{#if msg}<p class="ok small">{msg}</p>{/if}
 	{#if err}<p class="error small">{err}</p>{/if}
-	<p class="small muted">
+	{#if mode === 'opening_balance'}<p class="small muted">
 		Ohne Kosten setzt das Cockpit den Bitget-Tagesschlusskurs am Kaufdatum an und markiert den Einstand als geschätzt. Für
 		die Haltefrist zählt das Kaufdatum – ohne Angabe der Beginn der Historie; Verkäufe daraus sind damit in aller Regel
 		steuerfrei (über ein Jahr).
-	</p>
+	</p>{/if}
 </section>
 
 {#if openings.length}
 	<section class="card" style="margin-top:16px">
-		<div class="card-title">Eingetragene Anfangsbestände</div>
+		<div class="card-title">Eingetragene Nachträge</div>
 		<div class="table-wrap">
 			<table>
-				<thead><tr><th>Börse</th><th>Coin</th><th class="num">Menge</th><th>Kaufdatum</th><th class="num">Kosten</th><th>Notiz</th><th></th></tr></thead>
+				<thead><tr><th>Art</th><th>Börse</th><th>Coin</th><th class="num">Menge</th><th>Datum</th><th class="num">Kosten</th><th>Notiz</th><th></th></tr></thead>
 				<tbody>
 					{#each openings as o (o.id)}
+						{@const k = o.kind ?? 'opening_balance'}
 						<tr>
+							<td class="small">{MODE_LABEL[k]}</td>
 							<td>{VNAME[(o.venue as V) ?? 'bitget'] ?? o.venue}</td>
-							<td><strong>{o.asset}</strong></td>
-							<td class="num">{qty(new Decimal(o.amount), 8)}</td>
+							<td><strong>{o.asset}</strong>{#if k === 'token_swap'} → <strong>{o.to_asset}</strong>{/if}</td>
+							<td class="num">{qty(new Decimal(o.amount), 8)}{#if k === 'token_swap' && o.to_amount} → {qty(new Decimal(o.to_amount), 8)}{/if}</td>
 							<td>{dateDe(berlinDay(o.ts))}</td>
-							<td class="num">{o.cost_eur ? money(new Decimal(o.cost_eur), 'EUR') : 'Tageswert'}</td>
+							<td class="num">{k !== 'opening_balance' ? '–' : o.cost_eur ? money(new Decimal(o.cost_eur), 'EUR') : 'Tageswert'}</td>
 							<td class="small">{o.note}</td>
-							<td><button class="ghost" onclick={() => remove(o.id, `${o.asset}-Anfangsbestand`)}>Löschen</button></td>
+							<td><button class="ghost" onclick={() => remove(o.id, `${MODE_LABEL[k]} ${o.asset}`)}>Löschen</button></td>
 						</tr>
 					{/each}
 				</tbody>
