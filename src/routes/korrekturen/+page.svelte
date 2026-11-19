@@ -4,7 +4,7 @@
 	import { onChainStaked, reconcile } from '#lib/analysis/reconcile.ts';
 	import { clearLedgerCache, berlinDay } from '#lib/data/ledger.ts';
 	import { money, qty } from '#lib/format.ts';
-	import { USD_STABLE } from '#lib/tax/assets.ts';
+	import { asset, USD_STABLE } from '#lib/tax/assets.ts';
 	import { computeTax } from '#lib/tax/engine.ts';
 	import { FxTable } from '#lib/tax/fx.ts';
 	import { PriceTable } from '#lib/tax/prices.ts';
@@ -70,6 +70,22 @@
 		return min || '2023-01-01';
 	});
 
+	/** Letzter Buchungstag je Börse und Coin (ohne Nachträge): frühestes Datum für Ausbuchung/Umstellung */
+	const lastDay = $derived.by(() => {
+		const m = new Map<string, string>();
+		for (const e of data.ledger?.ledger ?? []) {
+			if (e.tx_id.startsWith('manual:')) continue;
+			const v = e.exchange.toLowerCase().startsWith('kucoin') ? 'kucoin' : 'bitget';
+			for (const c of [e.buy_cur, e.sell_cur]) {
+				if (!c) continue;
+				const k = `${v}|${asset(c)}`;
+				if (e.day > (m.get(k) ?? '')) m.set(k, e.day);
+			}
+		}
+		return m;
+	});
+	const lastOf = (v: V, c: string) => lastDay.get(`${v}|${c.trim().toUpperCase()}`) ?? '';
+
 	// Formular: Anfangsbestand, Ausbuchung oder Token-Umstellung
 	type Mode = 'opening_balance' | 'write_off' | 'token_swap';
 	const MODE_LABEL: Record<Mode, string> = { opening_balance: 'Anfangsbestand', write_off: 'Ausbuchung', token_swap: 'Token-Umstellung' };
@@ -92,7 +108,7 @@
 		venue = v;
 		coin = r.coin;
 		amount = r.gap.abs().toString();
-		date = '';
+		date = m === 'opening_balance' ? '' : lastOf(v, r.coin);
 		cost = '';
 		toCoin = toAmount = '';
 		note = m === 'opening_balance' ? `Bestand vor Beginn der Historie (Abgleich mit ${VNAME[v]})` : '';
@@ -124,6 +140,9 @@
 		if (a.lte(0)) return void (err = 'Die Menge muss größer als 0 sein.');
 		if (k && k.lt(0)) return void (err = 'Kosten dürfen nicht negativ sein.');
 		if (mode !== 'opening_balance' && !date) return void (err = 'Bitte das Datum angeben (ungefähr reicht).');
+		const last = lastOf(venue, c);
+		if (mode !== 'opening_balance' && last && date < last)
+			return void (err = `${c} hat bei ${VNAME[venue]} noch Buchungen bis ${dateDe(last)}. Das Datum muss an oder nach diesem Tag liegen, sonst bleibt ein Rest stehen.`);
 		if (mode === 'token_swap') {
 			if (!/^[A-Z0-9]{1,20}$/.test(tc) || tc === c) return void (err = 'Bitte den neuen Coin angeben, z. B. S.');
 			if (!ta || ta.lte(0)) return void (err = 'Bitte die Menge des neuen Coins angeben.');
@@ -133,8 +152,9 @@
 		const defaultNote =
 			mode === 'write_off' ? 'Ausbuchung (Delisting)' : mode === 'token_swap' ? `Token-Umstellung ${c} → ${tc}` : 'Anfangsbestand';
 		const { error } = await data.supabase.from('manual_adjustments').insert({
-			// Mittag UTC liegt sicher auf demselben Berliner Kalendertag
-			ts: new Date(`${day}T12:00:00Z`).toISOString(),
+			// Anfangsbestand: Mittag UTC (sicher derselbe Berliner Tag). Ausbuchung/Umstellung: Tagesende
+			// (21:59 UTC = 22:59/23:59 Berlin), damit alle Buchungen dieses Tages vorher verarbeitet sind.
+			ts: new Date(`${day}T${mode === 'opening_balance' ? '12:00' : '21:59'}:00Z`).toISOString(),
 			venue,
 			asset: c,
 			amount: a.toString(),
@@ -328,7 +348,9 @@
 				<div>
 					<label for="date">Datum</label>
 					<input id="date" type="date" bind:value={date} max={today} />
-					<p class="small muted" style="margin:4px 0 0">Ungefähr reicht; nach der letzten Buchung des Coins</p>
+					<p class="small muted" style="margin:4px 0 0">
+						{#if coin && lastOf(venue, coin)}Letzte {coin.trim().toUpperCase()}-Buchung bei {VNAME[venue]}: {dateDe(lastOf(venue, coin))} – frühestens dieser Tag{:else}Ungefähr reicht; nach der letzten Buchung des Coins{/if}
+					</p>
 				</div>
 			{/if}
 		</div>
