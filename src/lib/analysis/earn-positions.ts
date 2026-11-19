@@ -110,7 +110,9 @@ export function earnPositions(live: LiveData | null, onChainLedger: Map<string, 
 		}
 	}
 
-	// Earn-Konto: was über die einzelnen Positionen hinausgeht (z. B. andere Earn-Produkte)
+	// Earn-Konto: was über die einzelnen Positionen hinausgeht. Bitget meldet On-Chain Earn (z. B. ETH-Staking)
+	// nur als Summe im Earn-Konto; ist der Coin laut Buchungen im On-Chain-Staking, ist es diese Position.
+	const coveredOnChain = new Set<string>();
 	if (live.earnAccount?.ok) {
 		for (const a of live.earnAccount.data) {
 			const venue: Venue = a.venue ?? 'bitget';
@@ -118,6 +120,26 @@ export function earnPositions(live: LiveData | null, onChainLedger: Map<string, 
 			const rest = D(a.qty).sub(listed);
 			const v = value(a.coin, rest);
 			if (rest.lte(0) || (v !== null && v.lt(1)) || rest.lte(D(a.qty).mul('1e-6'))) continue;
+			const staked = venue === 'bitget' ? onChainLedger.get(a.coin) : undefined;
+			if (staked && staked.gt(0)) {
+				coveredOnChain.add(a.coin);
+				// Abweichung zu den Buchungen (u. a. aufgelaufene Erträge) nur als Hinweis, nicht als „Ertrag bisher“:
+				// Bitgets eigene Ertragsangabe je Unterposition ist über die Schnittstelle nicht abrufbar
+				const diff = rest.sub(staked);
+				out.push({
+					venue,
+					coin: a.coin,
+					qty: rest,
+					product: 'On-Chain Earn',
+					apy: null,
+					profit: null,
+					start: null,
+					end: null,
+					valueUsdt: v,
+					note: `laut Buchungen ${staked.toString()} ${a.coin} eingesetzt (Differenz ${diff.gt(0) ? '+' : ''}${diff.toString()}); Zins und Ertrag liefert die Bitget-Schnittstelle nicht`
+				});
+				continue;
+			}
 			out.push({ venue, coin: a.coin, qty: rest, product: 'Sonstiges Earn-Produkt', apy: null, profit: null, start: null, end: null, valueUsdt: v });
 		}
 	}
@@ -125,7 +147,7 @@ export function earnPositions(live: LiveData | null, onChainLedger: Map<string, 
 	// Bitget On-Chain-Staking, das nur aus den Buchungen bekannt ist (nicht in Elite enthalten)
 	const eliteUnderlying = new Set(live.elite?.ok ? live.elite.data.map((e) => e.underlying || e.coin) : []);
 	for (const [coin, q] of onChainLedger) {
-		if (q.lte(0) || eliteUnderlying.has(coin)) continue;
+		if (q.lte(0) || eliteUnderlying.has(coin) || coveredOnChain.has(coin)) continue;
 		out.push({
 			venue: 'bitget',
 			coin,

@@ -28,6 +28,15 @@ describe('earnPositions', () => {
 		earnAccount: { ok: true, data: [{ coin: 'KCS', qty: '1', venue: 'kucoin' }] }
 	});
 
+	it('führt On-Chain Earn aus dem Earn-Konto und den Buchungen zu einer Zeile zusammen', () => {
+		const live = base({ earnAccount: { ok: true, data: [{ coin: 'ETH', qty: '3.28687537' }] } });
+		const p = earnPositions(live, new Map([['ETH', new Decimal('3.177485')]]), now);
+		expect(p).toHaveLength(1);
+		expect(p[0]).toMatchObject({ coin: 'ETH', product: 'On-Chain Earn' });
+		expect(p[0]!.qty.toString()).toBe('3.28687537');
+		expect(p[0]!.note).toContain('+0.10939037');
+	});
+
 	it('baut Positionen beider Börsen mit Laufzeit, Ertrag und On-Chain aus Buchungen', () => {
 		const p = earnPositions(mergeLive(bitget, kucoin), new Map([['ETH', new Decimal('0.1')]]), now);
 		const by = (c: string) => p.find((x) => x.coin === c)!;
