@@ -1,7 +1,7 @@
-import { OPENING_TYPE, type Category, type LedgerEntry } from './types';
+import { OPENING_TYPE, WRITE_OFF_TYPE, type Category, type LedgerEntry } from './types';
 
 /**
- * Ordnet eine CoinTracking-Buchung (Bitget) einem Steuertopf zu.
+ * Ordnet eine Buchung (CoinTracking- bzw. API-Format, Bitget und KuCoin) einem Steuertopf zu.
  * Grundlage: Inventur aller Type/Group/Comment-Kombinationen im Export (Stand 11/2026).
  * Steuerlich zählt die Art der Buchung, nicht das Konto: Earn-Zinsen bucht Bitget z. B. aufs Spot-Konto.
  */
@@ -11,6 +11,18 @@ export function classify(e: LedgerEntry): Category {
 	const account = e.exchange.toLowerCase();
 
 	if (type === OPENING_TYPE) return 'opening_in';
+	if (type === WRITE_OFF_TYPE) return 'write_off';
+
+	// Von linkTransfers() erkannte Umbuchungen (KuCoin intern, Börse ↔ Börse): steuerlich ohne Wirkung;
+	// die Engine lässt Bestände bei Überweisungen zwischen Börsen mit Kaufdatum und Einstand mitwandern.
+	if (e.link) return 'transfer';
+
+	// KuCoin: CoinTracking führt Umbuchungen Funding ↔ Trading als Ein-/Auszahlung ohne Kommentar.
+	// Paare erkennt linkTransfers(); was übrig bleibt, ist eine echte Ein- bzw. Auszahlung.
+	if (account.startsWith('kucoin') && (type === 'Deposit' || type === 'Withdrawal')) {
+		if (comment === 'Internal Transfer') return 'transfer';
+		return type === 'Deposit' ? 'external_in' : 'external_out';
+	}
 
 	// Ein- und Auszahlungen: extern nur bei echten Wallet-Bewegungen, sonst Umbuchung zwischen Bitget-Konten
 	if (type === 'Deposit' || type === 'Withdrawal') {

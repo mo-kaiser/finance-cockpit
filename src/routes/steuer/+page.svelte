@@ -118,7 +118,7 @@
 			<strong>Noch keine EZB-Kurse geladen.</strong> Ohne Kurse lassen sich USDT-Beträge nicht in Euro umrechnen.
 		{/if}
 		<div class="muted small">
-			Datenquellen: CoinTracking {data.sources.cointracking.toLocaleString('de-DE')} · Bitget-API {data.sources.api.toLocaleString('de-DE')}
+			Datenquellen: CoinTracking {data.sources.cointracking.toLocaleString('de-DE')} · Börsen-API {data.sources.api.toLocaleString('de-DE')}{#if data.sources.kucoin} · davon KuCoin {data.sources.kucoin.toLocaleString('de-DE')}{/if}
 			{#if data.sources.apiLast}(bis {new Date(data.sources.apiLast).toLocaleString('de-DE', { timeZone: 'Europe/Berlin' })}){/if}
 		</div>
 		{#if fxMsg}<div class={fxMsg.startsWith('Fehler') ? 'error' : 'muted'}>{fxMsg}</div>{/if}
@@ -170,6 +170,7 @@
 			<li>USDT und USDC werden 1:1 als US-Dollar bewertet und mit dem EZB-Referenzkurs des Tages in Euro umgerechnet (Wochenende/Feiertag: letzter Kurs davor).</li>
 			<li>Perpetual Futures gelten als Termingeschäfte (§ 20 Abs. 2 S. 1 Nr. 3 EStG); das BMF-Schreiben vom 06.03.2025 regelt sie nicht ausdrücklich.</li>
 			<li>Spot: FIFO je Coin über alle Bitget-Konten, Haltefrist ein Jahr (§ 23 EStG). Auch Käufe mit USDT sind Veräußerungen von USDT.</li>
+			<li>FIFO je Börse (Bitget, KuCoin) wie im BMF-Schreiben vom 06.03.2025 (walletbezogen); die Bitget-Unterkonten bilden einen Topf. Überweisungen zwischen den Börsen werden erkannt; die Bestände behalten Kaufdatum und Einstand.</li>
 			<li>Earn-Erträge und Tausch Coin gegen Coin werden mit dem Bitget-Tagesschlusskurs (USDT, UTC-Tageskerze) des Zuflusstags bewertet, umgerechnet mit dem EZB-Kurs. Der Wert eines Zinsertrags ist zugleich die Anschaffungskosten des Zins-Bestands.</li>
 			<li>Einzahlungen von außen (andere Börse, Wallet): solange keine Korrektur nachgetragen ist, gelten der Einzahlungstag als Kaufdatum und der Tageswert als Anschaffungskosten (geschätzt). Das echte Kaufdatum kann früher liegen – dann wäre ein Verkauf eventuell schon steuerfrei.</li>
 			<li>Gebühren im gekauften Coin mindern die erhaltene Menge, Gebühren im verkauften Coin erhöhen die abgegebene Menge.</li>
@@ -243,13 +244,14 @@
 			<div class="table-wrap">
 				<table>
 					<thead>
-						<tr><th>Datum</th><th>Asset</th><th class="num">Menge</th><th>gegen</th><th class="num">Erlös</th><th class="num">Kosten</th><th class="num">stpfl.</th><th class="num">steuerfrei</th><th>Status</th></tr>
+						<tr><th>Datum</th><th>Börse</th><th>Asset</th><th class="num">Menge</th><th>gegen</th><th class="num">Erlös</th><th class="num">Kosten</th><th class="num">stpfl.</th><th class="num">steuerfrei</th><th>Status</th></tr>
 					</thead>
 					<tbody>
 						{#each disposalsShown as d (d.txId)}
 							{@const cost = d.portions.reduce<Decimal | null>((s, p) => (s === null || p.cost === null ? null : s.add(p.cost)), new Decimal(0))}
 							<tr>
 								<td>{d.day}</td>
+								<td class="small">{d.venue === 'kucoin' ? 'KuCoin' : 'Bitget'}</td>
 								<td>{d.asset}</td>
 								<td class="num">{num(d.qty)}</td>
 								<td>{d.counter}</td>

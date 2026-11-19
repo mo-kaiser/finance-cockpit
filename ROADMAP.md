@@ -1,6 +1,6 @@
 # Roadmap
 
-Stand: 18.11.2026. Reihenfolge = Empfehlung.
+Stand: 19.11.2026. Reihenfolge = Empfehlung.
 
 ## 1. Absicherung (zuerst)
 
@@ -30,13 +30,14 @@ Stand: 18.11.2026. Reihenfolge = Empfehlung.
   - [ ] Warnungen auf der Steuer-Seite als „geprüft“ markieren
 - [ ] **Jahresabschluss 2026** (Januar 2027): eingefrorener Snapshot (`report_snapshots`) und PDF für Steuererklärung / Steuerberater
 
-## 4. KuCoin per API (Mo möchte das bald nachziehen; liefert Kaufdaten für Überweisungen KuCoin → Bitget)
+## 4. KuCoin per API
 
-- [ ] Ursache des API-Fehlers bei CoinTracking klären; eigenen Read-Only-Key für das Cockpit anlegen
-- [ ] Reichweiten-Prüfung und Inventur der KuCoin-Buchungsarten (wie bei Bitget), Spot/Trading, Funding, ggf. Futures (eigene API)
-- [ ] Rohdaten in `api_records` (source `kucoin`), täglicher Abruf; Dedup gegen den CoinTracking-Import (KuCoin-Historie bis 08/2025)
-- [ ] Steuer: Ledger-View und Mapper je Börse; FIFO-Bestände je Börse statt je Coin global (Methode mit Steuerberater bestätigen)
-- [ ] Dashboard/Analysen: Broker-Auswahl Bitget / KuCoin / alle
+- [x] Eigener Read-Only-Key („General“), KuCoin global (nicht EU); API liefert Kontobuchungen 1 Jahr rückwirkend (ab 20.11.2025), Export max. 100 Tage – nicht nötig
+- [x] Rohdaten in `api_records` (source `kucoin`), täglicher Abruf (live seit 18.11.2026, PR #11); Inventur 18.11.: Earn-Erträge, Earn-Anlagen, Umbuchungen, Spot (DASH, SUPRA), Kleinstbetrag → KCS, Auszahlung ETH
+- [x] Ledger: KuCoin aus CoinTracking (bis 08/2025) + API (ab 11/2025), Überweisungen zwischen Börsen verknüpft, FIFO je Börse (BMF 06.03.2025 walletbezogen) – auf staging 19.11.2026
+- [x] Dashboard Alle/Bitget/KuCoin, Korrekturen je Börse – auf staging
+- [ ] Offen: DASH-Verkauf 18.01.2026 ohne Kauf in den Daten (Anfangsbestand KuCoin nachtragen), FTM → S (Sonic) Token-Umstellung 01/2025, DFI/XMR-Reste bei KuCoin klären
+- [ ] Optional: Tageskurse von KuCoin für Coins ohne Bitget-Kurs (z. B. KCS); Steuerberater: Bitget-Unterkonten als eine Wallet?
 
 ## 5. Technik (ohne Eile)
 

@@ -10,7 +10,7 @@ export const load: PageLoad = async ({ parent, fetch, depends }) => {
 	depends('app:live');
 	const { supabase } = await parent();
 
-	const [ledger, live, runs, wallet] = await Promise.allSettled([
+	const [ledger, live, runs, wallet, kucoin] = await Promise.allSettled([
 		loadLedger(supabase),
 		fetch('/api/bitget/live').then(async (r) => {
 			if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message ?? `HTTP ${r.status}`);
@@ -37,7 +37,13 @@ export const load: PageLoad = async ({ parent, fetch, depends }) => {
 			.then(({ data, error }) => {
 				if (error) throw new Error(error.message);
 				return (data ?? []) as WalletRecord[];
-			})
+			}),
+		// KuCoin live (null, solange kein API-Key eingerichtet ist)
+		fetch('/api/kucoin/live').then(async (r) => {
+			if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message ?? `HTTP ${r.status}`);
+			const body = (await r.json()) as LiveData & { configured: boolean };
+			return body.configured ? body : null;
+		})
 	]);
 
 	return {
@@ -47,6 +53,8 @@ export const load: PageLoad = async ({ parent, fetch, depends }) => {
 		liveError: live.status === 'rejected' ? String((live.reason as Error).message) : null,
 		syncRuns: runs.status === 'fulfilled' ? runs.value : null,
 		wallet: wallet.status === 'fulfilled' ? wallet.value : [],
-		walletError: wallet.status === 'rejected' ? String((wallet.reason as Error).message) : null
+		walletError: wallet.status === 'rejected' ? String((wallet.reason as Error).message) : null,
+		kucoin: kucoin.status === 'fulfilled' ? kucoin.value : null,
+		kucoinError: kucoin.status === 'rejected' ? String((kucoin.reason as Error).message) : null
 	};
 };

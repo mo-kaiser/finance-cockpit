@@ -19,10 +19,31 @@ export interface LedgerEntry {
 	n: number;
 	/** Nur Anfangsbestand (manual_adjustments): bekannte Anschaffungskosten in EUR, null = Tageswert schätzen */
 	cost_eur?: string | null;
+	/** Blockchain-Transaktion (Ein-/Auszahlungen), soweit bekannt */
+	tx_hash?: string | null;
+	/** Verknüpfung durch linkTransfers(): Umbuchung zwischen eigenen Konten bzw. Börsen */
+	link?: TransferLink;
 }
+
+export type Venue = 'bitget' | 'kucoin';
+
+export type TransferLink =
+	/** Umbuchung zwischen Konten derselben Börse (CoinTracking führt KuCoin-Umbuchungen als Ein-/Auszahlung) */
+	| { kind: 'internal'; peer: string }
+	/** Überweisung zwischen zwei Börsen: Bestände wandern mit Kaufdatum und Einstand */
+	| { kind: 'cross'; peer: string; role: 'out' | 'in'; from: Venue; to: Venue };
+
+/** Börse einer Buchung (Konto-Bezeichnung wie CoinTracking: „Bitget Spot“, „Kucoin Funding“ …) */
+export const venueOf = (e: Pick<LedgerEntry, 'exchange'>): Venue => (e.exchange.toLowerCase().startsWith('kucoin') ? 'kucoin' : 'bitget');
+
+export const VENUE_LABEL: Record<Venue, string> = { bitget: 'Bitget', kucoin: 'KuCoin' };
 
 /** Buchungsart für Anfangsbestände aus manual_adjustments */
 export const OPENING_TYPE = 'Opening Balance';
+/** Manuelle Ausbuchung (Delisting, Verlust): Abgang ohne Erlös */
+export const WRITE_OFF_TYPE = 'Write-off';
+/** Manuelle Token-Umstellung (z. B. FTM → S): Kaufdatum und Einstand wandern mit */
+export const SWAP_TYPE = 'Swap (non taxable)';
 
 export type Category =
 	| 'kap_pnl'
@@ -38,6 +59,7 @@ export type Category =
 	| 'external_out'
 	| 'transfer'
 	| 'opening_in'
+	| 'write_off'
 	| 'unknown';
 
 export const CATEGORY_LABEL: Record<Category, string> = {
@@ -54,5 +76,6 @@ export const CATEGORY_LABEL: Record<Category, string> = {
 	external_out: 'Auszahlung nach außen',
 	transfer: 'Interne Umbuchung',
 	opening_in: 'Anfangsbestand (nachgetragen)',
+	write_off: 'Ausbuchung (nachgetragen)',
 	unknown: 'Nicht zugeordnet'
 };

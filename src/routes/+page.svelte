@@ -2,7 +2,7 @@
 	import Decimal from 'decimal.js';
 	import { invalidate } from '$app/navigation';
 	import { futuresEvents, futuresStats, inRange } from '#lib/analysis/futures.ts';
-	import { buildPortfolio, type Account } from '#lib/analysis/portfolio.ts';
+	import { buildPortfolio, mergeLive, type Account } from '#lib/analysis/portfolio.ts';
 	import { money, pct, qty, tone } from '#lib/format.ts';
 	import { computeTax } from '#lib/tax/engine.ts';
 	import { FxTable } from '#lib/tax/fx.ts';
@@ -16,9 +16,9 @@
 
 	let { data } = $props();
 
-	// Bisher ein Broker; die Auswahl ist für weitere vorbereitet
-	const brokers = ['Bitget'];
-	let broker = $state('Bitget');
+	// Börsen: Bitget, KuCoin (sobald eingerichtet) oder beide zusammen
+	const brokers = $derived(data.kucoin ? ['Alle', 'Bitget', 'KuCoin'] : ['Bitget']);
+	let broker = $state('Alle');
 
 	const ACCOUNTS: { key: Account | 'all'; label: string }[] = [
 		{ key: 'all', label: 'Alle Konten' },
@@ -29,6 +29,10 @@
 	let account = $state<Account | 'all'>('all');
 	let hideDust = $state(true);
 	let refreshing = $state(false);
+
+	/** Live-Bestände der gewählten Börse(n) im Bitget-Format */
+	const liveAll = $derived(data.live && data.kucoin ? mergeLive(data.live, data.kucoin) : (data.live ?? data.kucoin));
+	const live = $derived(!data.kucoin ? data.live : broker === 'KuCoin' ? data.kucoin : broker === 'Bitget' ? data.live : liveAll);
 
 	const fx = $derived(new FxTable(data.ledger?.fx ?? []));
 	const eurPerUsdt = $derived.by(() => {
@@ -41,13 +45,14 @@
 	const tax = $derived(data.ledger && fx.size ? computeTax(data.ledger.ledger, fx, 'all', priceTable) : null);
 
 	const portfolio = $derived(
-		data.live
+		live
 			? buildPortfolio(
-					data.live,
+					live,
 					eurPerUsdt,
-					tax?.holdingsEnd ?? [],
+					// Einstand aus dem FIFO-Bestand der gewählten Börse (FIFO wird je Börse geführt)
+					(broker === 'KuCoin' ? tax?.holdingsByVenue.kucoin : broker === 'Bitget' && data.kucoin ? tax?.holdingsByVenue.bitget : tax?.holdingsEnd) ?? [],
 					new Set(account === 'all' ? (['spot', 'earn', 'futures'] as Account[]) : [account]),
-					data.ledger ? onChainStaked(data.ledger.ledger, data.live) : undefined
+					data.ledger && broker !== 'KuCoin' ? onChainStaked(data.ledger.ledger, data.live ?? undefined) : undefined
 				)
 			: null
 	);
@@ -67,7 +72,7 @@
 		return { sum, covered };
 	});
 
-	const positions = $derived(data.live?.positions.ok ? data.live.positions.data : []);
+	const positions = $derived(live?.positions.ok ? live.positions.data : []);
 	const posUnrealized = $derived(positions.reduce((s, p) => s.add(p.unrealizedPL || 0), new Decimal(0)));
 
 	// Futures-Ergebnis laufender Monat und laufendes Jahr
@@ -96,10 +101,10 @@
 		p2p: 'P2P'
 	};
 	const reconcile = $derived.by(() => {
-		if (!data.live?.accounts.ok) return null;
-		const ours = (acc: Account) => buildPortfolio(data.live!, eurPerUsdt, [], new Set([acc])).totalUsdt;
+		if (!live?.accounts.ok) return null;
+		const ours = (acc: Account) => buildPortfolio(live!, eurPerUsdt, [], new Set([acc])).totalUsdt;
 		const known: Record<string, Decimal> = { spot: ours('spot'), futures: ours('futures'), earn: ours('earn') };
-		const rows = data.live.accounts.data
+		const rows = live.accounts.data
 			.map((a) => {
 				const bitget = new Decimal(a.usdtBalance || 0);
 				const cockpit = known[a.accountType] ?? null;
@@ -111,17 +116,17 @@
 	});
 
 	const errors = $derived(
-		data.live
+		live
 			? (
 					[
-						['Spot', data.live.spot],
-						['Earn flexibel', data.live.earnFlex],
-						['Earn fest', data.live.earnFixed],
-						['Earn-Konto', data.live.earnAccount ?? { ok: true as const, data: [] }],
-						['On-Chain-Earn', data.live.elite ?? { ok: true as const, data: [] }],
-						['Futures-Konto', data.live.futures],
-						['Positionen', data.live.positions],
-						['Kurse', data.live.tickers]
+						['Spot', live.spot],
+						['Earn flexibel', live.earnFlex],
+						['Earn fest', live.earnFixed],
+						['Earn-Konto', live.earnAccount ?? { ok: true as const, data: [] }],
+						['On-Chain-Earn', live.elite ?? { ok: true as const, data: [] }],
+						['Futures-Konto', live.futures],
+						['Positionen', live.positions],
+						['Kurse', live.tickers]
 					] as const
 				).flatMap(([label, s]) => (s.ok ? [] : [`${label}: ${s.error}`]))
 			: []
@@ -152,13 +157,13 @@
 	);
 	// Heutiger Punkt = Live-Gesamtwert aller Konten (wie „Bestände“), dazu die Zerlegung des Abstands zum gestrigen Punkt
 	const allPortfolio = $derived(
-		data.live
+		liveAll
 			? buildPortfolio(
-					data.live,
+					liveAll,
 					eurPerUsdt,
 					tax?.holdingsEnd ?? [],
 					new Set(['spot', 'earn', 'futures'] as Account[]),
-					data.ledger ? onChainStaked(data.ledger.ledger, data.live) : undefined
+					data.ledger ? onChainStaked(data.ledger.ledger, data.live ?? undefined) : undefined
 				)
 			: null
 	);
@@ -249,6 +254,7 @@
 	</p>
 {/if}
 {#if data.liveError}<p class="error">Bitget nicht erreichbar: {data.liveError}</p>{/if}
+{#if data.kucoinError}<p class="error">KuCoin nicht erreichbar: {data.kucoinError}</p>{/if}
 {#if data.ledgerError}<p class="error">{data.ledgerError}</p>{/if}
 {#each errors as e (e)}<p class="error small">{e}</p>{/each}
 
@@ -325,7 +331,7 @@
 		</div>
 		{#if portfolio.unpriced.length}<p class="small muted">Ohne Kurs: {portfolio.unpriced.join(', ')}</p>{/if}
 		<p class="small muted">
-			Kurse und Bestände live von Bitget ({data.live ? new Date(data.live.at).toLocaleTimeString('de-DE') : ''}). Euro über den letzten EZB-Kurs. Einstand nach FIFO aus der Buchungshistorie – nur angezeigt, wenn die Historie den Bestand vollständig erklärt.
+			Kurse und Bestände live von {broker === 'Alle' && data.kucoin ? 'Bitget und KuCoin' : broker} ({live ? new Date(live.at).toLocaleTimeString('de-DE') : ''}). Euro über den letzten EZB-Kurs. Einstand nach FIFO aus der Buchungshistorie – nur angezeigt, wenn die Historie den Bestand vollständig erklärt.
 		</p>
 	</section>
 

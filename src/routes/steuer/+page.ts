@@ -17,7 +17,7 @@ export const load: PageLoad = async ({ parent, depends }) => {
 			fx: [],
 			prices: [],
 			pricesError: null as string | null,
-			sources: { cointracking: 0, api: 0, apiLast: null as string | null },
+			sources: { cointracking: 0, api: 0, apiLast: null as string | null, kucoin: 0 as number | undefined },
 			loadError: (e as Error).message
 		};
 	}

@@ -3,11 +3,11 @@ import { asset, FIAT_EUR, USD_STABLE } from './assets';
 import { classify, isKap } from './classify';
 import type { FxTable } from './fx';
 import type { PriceTable } from './prices';
-import type { Category, LedgerEntry } from './types';
+import { venueOf, VENUE_LABEL, type Category, type LedgerEntry, type Venue } from './types';
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
-export const ENGINE_VERSION = 'engine-0.2';
+export const ENGINE_VERSION = 'engine-0.3';
 
 const ZERO = new Decimal(0);
 
@@ -42,6 +42,8 @@ export type DisposalStatus = 'ok' | 'geschaetzt' | 'kosten_unbekannt' | 'fehlbes
 export interface Disposal {
 	txId: string;
 	day: string;
+	/** Börse, deren FIFO-Bestand verkauft wurde */
+	venue: Venue;
 	asset: string;
 	qty: Decimal;
 	counter: string;
@@ -95,6 +97,8 @@ export interface Warning {
 	asset?: string;
 	qty?: Decimal;
 	note: string;
+	/** Börse der Buchung */
+	venue?: Venue;
 }
 
 export interface Holding {
@@ -116,8 +120,10 @@ export interface TaxResult {
 	earn: EarnRow[];
 	warnings: Warning[];
 	holdingsStart: Holding[];
-	/** Bestand nach der letzten verarbeiteten Buchung (bei 'all' bzw. laufendem Jahr: aktueller Stand). */
+	/** Bestand nach der letzten verarbeiteten Buchung (bei 'all' bzw. laufendem Jahr: aktueller Stand), alle Börsen. */
 	holdingsEnd: Holding[];
+	/** Dasselbe je Börse (FIFO wird je Börse geführt) */
+	holdingsByVenue: Record<Venue, Holding[]>;
 	categoryCounts: Partial<Record<Category, number>>;
 	totals: {
 		kapGains: Decimal; // positive Ergebnisse aus Termingeschäften (Gewinne)
@@ -159,10 +165,13 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 	const yEnd = year === 'all' ? '9999-12-31' : `${year}-12-31`;
 	const inYear = (day: string) => day >= yStart && day <= yEnd;
 
+	// FIFO je Börse (BMF 06.03.2025: walletbezogene Betrachtung); Bitget-Unterkonten bilden einen Topf
 	const pools = new Map<string, Pool>();
-	const pool = (a: string) => {
-		let p = pools.get(a);
-		if (!p) pools.set(a, (p = { lots: [], head: 0 }));
+	let curVenue: Venue = 'bitget';
+	const pool = (a: string, v: Venue = curVenue) => {
+		const k = `${v}|${a}`;
+		let p = pools.get(k);
+		if (!p) pools.set(k, (p = { lots: [], head: 0 }));
 		return p;
 	};
 
@@ -174,7 +183,7 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 	let holdingsStart: Holding[] | null = null;
 
 	const warn = (w: Warning) => {
-		if (inYear(w.day)) warnings.push(w);
+		if (inYear(w.day)) warnings.push({ venue: curVenue, ...w });
 	};
 
 	/** EUR-Wert eines Betrags, sofern die Währung EUR oder ein USD-Stablecoin ist. */
@@ -208,8 +217,8 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 	};
 
 	/** Entnimmt Menge nach FIFO. Liefert die entnommenen Teilmengen und einen etwaigen Fehlbestand. */
-	const take = (a: string, qty: Decimal) => {
-		const p = pool(a);
+	const take = (a: string, qty: Decimal, v: Venue = curVenue) => {
+		const p = pool(a, v);
 		const parts: { lot: Lot; qty: Decimal; cost: Decimal | null }[] = [];
 		let rest = qty;
 		while (rest.gt(0) && p.head < p.lots.length) {
@@ -286,18 +295,25 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 		}
 
 		if (inYear(e.day)) {
-			disposals.push({ txId: e.tx_id, day: e.day, asset: a, qty, counter, proceeds, portions, status, gainTaxable, gainFree });
+			disposals.push({ txId: e.tx_id, day: e.day, venue: curVenue, asset: a, qty, counter, proceeds, portions, status, gainTaxable, gainFree });
 		}
 	};
 
-	const snapshotHoldings = (): Holding[] =>
-		[...pools.entries()]
-			.map(([a, p]) => {
+	const snapshotHoldings = (only?: Venue): Holding[] => {
+		const byAsset = new Map<string, Pool[]>();
+		for (const [k, p] of pools) {
+			const [v, a] = k.split('|') as [Venue, string];
+			if (only && v !== only) continue;
+			byAsset.set(a, [...(byAsset.get(a) ?? []), p]);
+		}
+		return [...byAsset.entries()]
+			.map(([a, ps]) => {
 				let qty = ZERO;
 				let costKnown = ZERO;
 				let qtyCostUnknown = ZERO;
 				const unknownBySource: Partial<Record<Category, Decimal>> = {};
 				let qtyEstimated = ZERO;
+				for (const p of ps)
 				for (let i = p.head; i < p.lots.length; i++) {
 					const l = p.lots[i]!;
 					qty = qty.add(l.qty);
@@ -313,8 +329,50 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 			})
 			.filter((h) => h.qty.gt(0))
 			.sort((a, b) => b.costKnown.cmp(a.costKnown));
+	};
 
 	const sorted = [...ledger].sort((a, b) => (a.ts === b.ts ? a.tx_id.localeCompare(b.tx_id) : a.ts < b.ts ? -1 : 1));
+
+	const byTx = new Map(sorted.map((e) => [e.tx_id, e]));
+	const movedPairs = new Set<string>();
+
+	/**
+	 * Überweisung zwischen zwei Börsen: Bestände verlassen die Quelle nach FIFO und kommen mit ursprünglichem
+	 * Kaufdatum und anteiligem Einstand am Ziel an. Die Netzwerkgebühr (Auszahlung − Einzahlung) geht unter.
+	 * Was an der Quelle fehlt (Kauf nicht in den Daten), kommt wie eine Einzahlung von außen an (Tageswert, geschätzt).
+	 */
+	const moveBetweenVenues = (w: LedgerEntry, d: LedgerEntry) => {
+		if (!w.sell_cur || !d.buy_cur) return;
+		const a = asset(w.sell_cur);
+		const src = venueOf(w);
+		const dst = venueOf(d);
+		const gross = dec(w.sell_amount);
+		const Fd = d.fee_cur && asset(d.fee_cur) === a ? dec(d.fee_amount) : ZERO;
+		const arrive = dec(d.buy_amount).sub(Fd);
+		if (gross.lte(0) || arrive.lte(0)) return;
+		const ratio = Decimal.min(arrive.div(gross), 1);
+		const { parts, shortfall } = take(a, gross, src);
+		for (const p of parts) {
+			const q = p.qty.mul(ratio);
+			pool(a, dst).lots.push({ ...p.lot, qty: q, cost: p.cost === null ? null : p.cost.mul(ratio) });
+			track(a, q);
+		}
+		if (shortfall.gt(0)) {
+			const q = shortfall.mul(ratio);
+			const value = USD_STABLE.has(a) ? fx.usdToEur(q, d.day) : priceEur(a, q, d.day);
+			pool(a, dst).lots.push({ qty: q, cost: value, day: d.day, txId: d.tx_id, estimated: value !== null, source: 'external_in' });
+			track(a, q);
+			warn({
+				kind: 'external_in',
+				venue: dst,
+				day: d.day,
+				txId: d.tx_id,
+				asset: a,
+				qty: q,
+				note: `Überweisung ${VENUE_LABEL[src]} → ${VENUE_LABEL[dst]}: Herkunft dieser Menge nicht in den ${VENUE_LABEL[src]}-Daten – Kaufdatum = Einzahlungstag, Kosten = Tageswert (geschätzt)`
+			});
+		}
+	};
 
 	let curDay: string | null = null;
 	for (const e of sorted) {
@@ -323,6 +381,7 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 		curDay = e.day;
 		if (!holdingsStart && e.day >= yStart) holdingsStart = snapshotHoldings();
 
+		curVenue = venueOf(e);
 		const cat = classify(e);
 		if (inYear(e.day)) categoryCounts[cat] = (categoryCounts[cat] ?? 0) + e.n;
 
@@ -353,8 +412,19 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 		}
 
 		switch (cat) {
-			case 'transfer':
+			case 'transfer': {
+				// Börse ↔ Börse: einmal je Paar, beim zeitlich ersten Teil (Einzahlung kann minimal früher gestempelt sein)
+				const l = e.link;
+				if (l?.kind === 'cross' && !movedPairs.has(e.tx_id)) {
+					const peer = byTx.get(l.peer);
+					if (peer) {
+						const [w, d] = l.role === 'out' ? [e, peer] : [peer, e];
+						moveBetweenVenues(w, d);
+						movedPairs.add(w.tx_id).add(d.tx_id);
+					}
+				}
 				break;
+			}
 
 			case 'spot_trade': {
 				if (!Bc || !Sc) {
@@ -436,6 +506,14 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 				break;
 			}
 
+			case 'write_off': {
+				// Nachgetragene Ausbuchung (z. B. delisteter Token): Bestand verlässt den Topf ohne Erlös.
+				// Bewusst dokumentiert, daher keine Warnung; ein Delisting-Verlust wird nicht angesetzt.
+				if (!Sc || S.lte(0)) break;
+				consume(Sc, S, e);
+				break;
+			}
+
 			case 'swap_nontaxable': {
 				if (!Bc || !Sc || S.lte(0)) break;
 				const { parts, shortfall } = take(Sc, S);
@@ -496,6 +574,7 @@ export function computeTax(ledger: LedgerEntry[], fx: FxTable, year: number | 'a
 		warnings,
 		holdingsStart,
 		holdingsEnd,
+		holdingsByVenue: { bitget: snapshotHoldings('bitget'), kucoin: snapshotHoldings('kucoin') },
 		categoryCounts,
 		totals
 	};
