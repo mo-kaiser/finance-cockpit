@@ -1,6 +1,5 @@
 <script lang="ts">
 	import Decimal from 'decimal.js';
-	import { invalidate } from '$app/navigation';
 	import { futuresEvents, futuresStats, inRange } from '#lib/analysis/futures.ts';
 	import { buildPortfolio, type Account } from '#lib/analysis/portfolio.ts';
 	import { money, pct, qty, tone } from '#lib/format.ts';
@@ -15,6 +14,9 @@
 	import { buildMovements, shortAddr, type Bucket } from '#lib/analysis/transfers.ts';
 
 	import BrokerSelect from '#lib/components/BrokerSelect.svelte';
+	import RefreshButton from '#lib/components/RefreshButton.svelte';
+	import PositionsCard from '#lib/components/PositionsCard.svelte';
+	import HelpBox from '#lib/components/HelpBox.svelte';
 	import { brokerLabel, brokerState, holdingsFor, liveFor } from '#lib/broker.svelte.ts';
 
 	let { data } = $props();
@@ -30,7 +32,6 @@
 	];
 	let account = $state<Account | 'all'>('all');
 	let hideDust = $state(true);
-	let refreshing = $state(false);
 
 	/** Live-Bestände der gewählten Börse(n) im Bitget-Format */
 	const liveAll = $derived(liveFor('Alle', data.live, data.kucoin));
@@ -134,14 +135,6 @@
 			: []
 	);
 
-	async function refresh() {
-		refreshing = true;
-		await invalidate('app:live');
-		refreshing = false;
-	}
-
-	const D = (s: string) => new Decimal(s || 0);
-
 	const sync = $derived(data.syncRuns ? assessSync(data.syncRuns) : null);
 
 	// Wertverlauf: Bestand aus den Buchungen × Tageskurs, bis gestern (heutiger Kurs steht erst morgen fest)
@@ -242,7 +235,7 @@
 				<button aria-pressed={account === a.key} onclick={() => (account = a.key)}>{a.label}</button>
 			{/each}
 		</div>
-		<button class="ghost" onclick={refresh} disabled={refreshing}>{refreshing ? 'Lade …' : 'Aktualisieren'}</button>
+		<RefreshButton />
 	</div>
 </div>
 
@@ -284,7 +277,7 @@
 		{/if}
 	</div>
 
-	<section class="card" style="margin-top:16px">
+	<section class="card block">
 		<div class="head-row">
 			<div class="card-title">Bestände</div>
 			<label class="check"><input type="checkbox" bind:checked={hideDust} /> Kleinstbeträge unter 1 USDT ausblenden{hidden ? ` (${hidden})` : ''}</label>
@@ -335,62 +328,14 @@
 		</p>
 	</section>
 
-	{#if reconcile && reconcile.rows.length}
-		<section class="card" style="margin-top:16px">
-			<div class="card-title">Abgleich mit den Kontosummen von Bitget</div>
-			<div class="table-wrap">
-				<table>
-					<thead><tr><th>Bitget-Konto</th><th class="num">laut Bitget (USDT)</th><th class="num">im Cockpit (USDT)</th><th class="num">Differenz</th></tr></thead>
-					<tbody>
-						{#each reconcile.rows as r (r.type)}
-							{@const off = r.diff.abs().gt(Decimal.max(1, r.bitget.abs().mul('0.01')))}
-							<tr>
-								<td>{r.label} <span class="muted small">({r.type})</span></td>
-								<td class="num">{qty(r.bitget, 2)}</td>
-								<td class="num">{r.cockpit ? qty(r.cockpit, 2) : '–'}</td>
-								<td class="num {off ? 'loss' : 'muted'}">{off ? qty(r.diff, 2) : 'passt'}</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
-			<p class="small muted">
-				Bitget liefert je Kontotyp einen Gesamtwert. Eine Differenz zeigt, dass ein Teil des Vermögens in einem Bereich liegt, dessen Einzelbestände das Cockpit noch nicht abfragt.
-			</p>
-		</section>
-	{/if}
-
-	{#if positions.length}
-		<section class="card" style="margin-top:16px">
-			<div class="card-title">Offene Futures-Positionen</div>
-			<div class="table-wrap">
-				<table>
-					<thead><tr><th>Symbol</th><th>Seite</th><th class="num">Größe</th><th class="num">Einstieg</th><th class="num">Mark</th><th class="num">Hebel</th><th class="num">Margin</th><th class="num">Liquidation</th><th class="num">Unrealisiert</th></tr></thead>
-					<tbody>
-						{#each positions as p (p.symbol + p.holdSide)}
-							<tr>
-								<td><strong>{p.symbol}</strong></td>
-								<td class={p.holdSide === 'long' ? 'gain' : 'loss'}>{p.holdSide === 'long' ? 'Long' : 'Short'}</td>
-								<td class="num">{qty(D(p.total), 6)}</td>
-								<td class="num">{qty(D(p.openPriceAvg), 6)}</td>
-								<td class="num">{qty(D(p.markPrice), 6)}</td>
-								<td class="num">{p.leverage}×</td>
-								<td class="num">{qty(D(p.marginSize), 2)}</td>
-								<td class="num muted">{p.liquidationPrice ? qty(D(p.liquidationPrice), 4) : '–'}</td>
-								<td class="num {tone(D(p.unrealizedPL))}">{money(D(p.unrealizedPL), 'USDT', { sign: true })}</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
-		</section>
-	{/if}
 {:else if !data.liveError}
 	<p class="muted">Lade Bestände …</p>
 {/if}
 
+<PositionsCard live={live} error={broker !== 'KuCoin' ? data.liveError : null} title="Offene Futures-Positionen" />
+
 {#if history && histShown.length > 1}
-	<section class="card" style="margin-top:16px">
+	<section class="card block">
 		<div class="head-row">
 			<div class="card-title">Wertverlauf</div>
 			<div class="seg" role="group" aria-label="Zeitraum">
@@ -441,8 +386,33 @@
 	</section>
 {/if}
 
+{#if portfolio && reconcile && reconcile.rows.length}
+	<section class="card block">
+		<div class="card-title">Abgleich mit den Kontosummen von Bitget</div>
+		<div class="table-wrap">
+			<table>
+				<thead><tr><th>Bitget-Konto</th><th class="num">laut Bitget (USDT)</th><th class="num">im Cockpit (USDT)</th><th class="num">Differenz</th></tr></thead>
+				<tbody>
+					{#each reconcile.rows as r (r.type)}
+						{@const off = r.diff.abs().gt(Decimal.max(1, r.bitget.abs().mul('0.01')))}
+						<tr>
+							<td>{r.label} <span class="muted small">({r.type})</span></td>
+							<td class="num">{qty(r.bitget, 2)}</td>
+							<td class="num">{r.cockpit ? qty(r.cockpit, 2) : '–'}</td>
+							<td class="num {off ? 'loss' : 'muted'}">{off ? qty(r.diff, 2) : 'passt'}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		<p class="small muted">
+			Bitget liefert je Kontotyp einen Gesamtwert. Eine Differenz zeigt, dass ein Teil des Vermögens in einem Bereich liegt, dessen Einzelbestände das Cockpit noch nicht abfragt.
+		</p>
+	</section>
+{/if}
+
 {#if data.ledger}
-	<section class="card" style="margin-top:16px">
+	<section class="card block">
 		<div class="head-row">
 			<div class="card-title">Ein- und Auszahlungen</div>
 			<div class="seg" role="group" aria-label="Art der Bewegung">
@@ -503,23 +473,16 @@
 	</section>
 {/if}
 
+<HelpBox>
+	<ul>
+		<li><strong>Gesamtwert</strong> und <strong>Bestände</strong>: live von {brokerLabel(broker)}, in Euro über den letzten EZB-Kurs. Mit „Konto“ schränkst du auf Spot, Earn oder Futures ein.</li>
+		<li><strong>Unrealisiert</strong>: aktueller Wert minus Einstand nach FIFO aus der Buchungshistorie – nur für Coins, deren Bestand die Historie vollständig erklärt.</li>
+		<li><strong>Offene Positionen</strong>: Futures live von Bitget, unrealisiertes Ergebnis zum Mark-Preis. <strong>Futures netto</strong>: realisiert inkl. Gebühren und Funding im laufenden Monat bzw. Jahr.</li>
+		<li><strong>Aktualisieren</strong> lädt Buchungen (inkl. nächtlichem Abruf), Bestände und Positionen neu.</li>
+	</ul>
+</HelpBox>
+
 <style>
-	.head-row {
-		display: flex;
-		justify-content: space-between;
-		align-items: baseline;
-		gap: 12px;
-		flex-wrap: wrap;
-	}
-	.check {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		margin: 0;
-	}
-	.check input {
-		width: auto;
-	}
 	.sync {
 		display: flex;
 		align-items: center;
@@ -548,10 +511,6 @@
 		flex-wrap: wrap;
 		gap: 12px 32px;
 		margin: 4px 0 12px;
-	}
-	.head-row .seg {
-		flex-wrap: wrap;
-		max-width: 100%;
 	}
 	.nowrap {
 		white-space: nowrap;

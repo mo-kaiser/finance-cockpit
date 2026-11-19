@@ -295,3 +295,50 @@ th {
 th.num {
 	font-family: var(--font);
 }
+
+/* Einheitlicher Seitenaufbau: Abstand zwischen Blöcken, Kopfzeile in Karten, Lesehilfe */
+.block {
+	margin-top: 16px;
+}
+
+.head-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+
+.head-row .seg {
+	flex-wrap: wrap;
+	max-width: 100%;
+}
+
+.check {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin: 0;
+}
+
+.check input {
+	width: auto;
+}
+
+details.help summary {
+	cursor: pointer;
+	font-weight: 600;
+}
+
+details.help .help-body {
+	margin-top: 10px;
+}
+
+details.help .help-body ul {
+	margin: 0;
+	padding-left: 1.2em;
+}
+
+details.help .help-body li + li {
+	margin-top: 4px;
+}

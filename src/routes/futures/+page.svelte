@@ -8,6 +8,10 @@
 	import { FxTable } from '#lib/tax/fx.ts';
 
 	import BrokerSelect from '#lib/components/BrokerSelect.svelte';
+	import RefreshButton from '#lib/components/RefreshButton.svelte';
+	import PositionsCard from '#lib/components/PositionsCard.svelte';
+	import HelpBox from '#lib/components/HelpBox.svelte';
+	import type { LiveData } from '#lib/analysis/portfolio.ts';
 	import { brokerState, ledgerFor } from '#lib/broker.svelte.ts';
 	import { venueOf } from '#lib/tax/types.ts';
 
@@ -85,141 +89,160 @@
 	const maxAbs = (bs: Bucket[]) => Math.max(1, ...bs.map((b) => Math.abs(b.pnl.toNumber())));
 	const mw = $derived(maxAbs(stats.byWeekday));
 	const mh = $derived(maxAbs(stats.byHour));
+
+	// ---------- Kennzahlen oben: folgen der gezeigten Ansicht (Kalender = Monat, Statistik = gewählter Zeitraum) ----------
+	const monthLabel = $derived(`${MONTHS[Number(month.slice(5)) - 1]} ${month.slice(0, 4)}`);
+	const shown = $derived(view === 'kalender' ? monthStats : stats);
+	const shownLabel = $derived(view === 'kalender' ? monthLabel : rangeLabel);
+
+	// ---------- Live-Positionen (Bitget) ----------
+	let live = $state<LiveData | null>(null);
+	let liveError = $state<string | null>(null);
+	$effect(() => {
+		const p = data.live;
+		let alive = true;
+		p.then((r) => {
+			if (!alive) return;
+			live = r.data;
+			liveError = r.error;
+		});
+		return () => {
+			alive = false;
+		};
+	});
+	const positions = $derived(live?.positions.ok ? live.positions.data : []);
+	const posUnrealized = $derived(positions.reduce((s, p) => s.add(p.unrealizedPL || 0), new Decimal(0)));
+	const posMargin = $derived(positions.reduce((s, p) => s.add(p.marginSize || 0), new Decimal(0)));
 </script>
 
 <div class="page-head">
 	<h1>Futures</h1>
 	<div class="toolbar">
 		<BrokerSelect show={hasKucoin} />
+		{#if view === 'statistik'}
+			<div class="seg" role="group" aria-label="Zeitraum">
+				<button aria-pressed={period === 'monat'} onclick={() => setParam('p', 'monat')}>Monat</button>
+				<button aria-pressed={period === 'jahr'} onclick={() => setParam('p', 'jahr')}>Jahr</button>
+				<button aria-pressed={period === 'gesamt'} onclick={() => setParam('p', 'gesamt')}>Gesamt</button>
+			</div>
+			{#if period === 'jahr'}
+				<select value={year} onchange={(e) => setParam('y', e.currentTarget.value)} aria-label="Jahr">
+					{#each years as y (y)}<option value={y}>{y}</option>{/each}
+				</select>
+			{:else if period === 'monat'}
+				<div class="month-nav">
+					<button class="ghost" onclick={() => shiftMonth(-1)} aria-label="Vormonat">‹</button>
+					<span>{rangeLabel}</span>
+					<button class="ghost" onclick={() => shiftMonth(1)} aria-label="Folgemonat">›</button>
+				</div>
+			{/if}
+		{/if}
+		<div class="seg" role="group" aria-label="Währung">
+			<button aria-pressed={cur === 'EUR'} onclick={() => setParam('cur', 'EUR')}>EUR</button>
+			<button aria-pressed={cur === 'USDT'} onclick={() => setParam('cur', 'USDT')}>USDT</button>
+		</div>
 		<div class="seg" role="group" aria-label="Ansicht">
 			<button aria-pressed={view === 'kalender'} onclick={() => setParam('view', 'kalender')}>Kalender</button>
 			<button aria-pressed={view === 'statistik'} onclick={() => setParam('view', 'statistik')}>Statistik</button>
 		</div>
-		<div class="seg" role="group" aria-label="Währung">
-			<button aria-pressed={cur === 'USDT'} onclick={() => setParam('cur', 'USDT')}>USDT</button>
-			<button aria-pressed={cur === 'EUR'} onclick={() => setParam('cur', 'EUR')}>EUR</button>
-		</div>
+		<RefreshButton />
 	</div>
 </div>
 
 {#if data.loadError}<p class="error">{data.loadError}</p>{/if}
 {#if broker === 'KuCoin' && !events.length}<p class="muted">Bei KuCoin gibt es keine Futures-Buchungen. Futures handelst du bisher nur bei Bitget.</p>{/if}
 
-{#if view === 'kalender'}
-	<div class="cal-layout">
-		<section class="card">
-			<div class="cal-head">
-				<button class="ghost" onclick={() => shiftMonth(-1)} aria-label="Vormonat">‹</button>
-				<div class="cal-title">{MONTHS[Number(month.slice(5)) - 1]} {month.slice(0, 4)}</div>
-				<button class="ghost" onclick={() => shiftMonth(1)} aria-label="Folgemonat">›</button>
-				<button class="ghost small" onclick={() => setParam('m', lastDay.slice(0, 7))}>Letzter Handelsmonat</button>
-			</div>
-			<div class="cal">
-				{#each [...WEEKDAYS, 'Woche'] as w (w)}<div class="wd">{w}</div>{/each}
-				{#each weeks as row, ri (ri)}
-					{#each row.days as d, di (di)}
-						{#if d}
-							{@const b = monthStats.byDay.get(d)}
-							{#if b}
-								<a class="cell has {tone(b.net)}" class:today={d === today} href={`/futures/tag/${d}?cur=${cur}`}>
-									<span class="dnum">{Number(d.slice(8))}</span>
-									<span class="dval mono">{fmt(b.net, true)}</span>
-									<span class="dsub">{b.trades ? `${b.trades} ${b.trades === 1 ? 'Trade' : 'Trades'}` : 'Funding/Gebühr'}</span>
-								</a>
-							{:else}
-								<div class="cell" class:today={d === today}><span class="dnum">{Number(d.slice(8))}</span></div>
-							{/if}
-						{:else}
-							<div class="cell blank"></div>
-						{/if}
-					{/each}
-					<div class="cell week {row.sum ? tone(row.sum.net) : ''}">
-						{#if row.sum}
-							<span class="dval mono">{fmt(row.sum.net, true)}</span>
-							<span class="dsub">{row.sum.trades ? `${row.sum.trades} ${row.sum.trades === 1 ? 'Trade' : 'Trades'}` : 'Funding/Gebühr'}</span>
-						{/if}
-					</div>
-				{/each}
-			</div>
-		</section>
-
-		<aside class="kpis side-kpis">
-			<div class="kpi">
-				<div class="label">Monat netto</div>
-				<div class="value {tone(monthStats.total.net)}">{fmt(monthStats.total.net, true)}</div>
-				<div class="sub">Trades brutto {fmt(monthStats.total.pnl, true)}</div>
-			</div>
-			<div class="kpi">
-				<div class="label">Gebühren · Funding</div>
-				<div class="value">{fmt(monthStats.total.fees)}</div>
-				<div class="sub">Funding {fmt(monthStats.total.funding, true)}</div>
-			</div>
-			<div class="kpi">
-				<div class="label">Trades · Trefferquote</div>
-				<div class="value">{monthStats.total.trades} · {pct(monthStats.winPct, 0)}</div>
-				<div class="sub">{monthStats.total.wins} Gewinner / {monthStats.total.losses} Verlierer</div>
-			</div>
-			<div class="kpi">
-				<div class="label">Handelstage</div>
-				<div class="value">{monthStats.days.win} / {monthStats.days.loss}</div>
-				<div class="sub">mit Trades: Plus / Minus · Quote {pct(monthStats.days.total ? monthStats.days.win / monthStats.days.total : null, 0)}</div>
-			</div>
-			<div class="kpi">
-				<div class="label">Ø je Trade netto</div>
-				<div class="value {tone(monthStats.expectancy)}">{fmt(monthStats.expectancy, true)}</div>
-				<div class="sub">inkl. Gebühren und Funding</div>
-			</div>
-			<div class="kpi">
-				<div class="label">Long / Short</div>
-				<div class="value">{monthStats.byDir.long.trades} / {monthStats.byDir.short.trades}</div>
-				<div class="sub">{fmt(monthStats.byDir.long.pnl, true)} / {fmt(monthStats.byDir.short.pnl, true)}</div>
-			</div>
-		</aside>
+<div class="kpis">
+	<div class="kpi">
+		<div class="label">Ergebnis netto · {shownLabel}</div>
+		<div class="value {tone(shown.total.net)}">{fmt(shown.total.net, true)}</div>
+		<div class="sub">Trades brutto {fmt(shown.total.pnl, true)}</div>
 	</div>
+	<div class="kpi">
+		<div class="label">Gebühren · Funding</div>
+		<div class="value">{fmt(shown.total.fees)}</div>
+		<div class="sub">Funding {fmt(shown.total.funding, true)}{shown.total.other.isZero() ? '' : ` · Sonstiges ${fmt(shown.total.other, true)}`}</div>
+	</div>
+	<div class="kpi">
+		<div class="label">Trades · Trefferquote</div>
+		<div class="value">{shown.total.trades} · {pct(shown.winPct, 0)}</div>
+		<div class="sub">{shown.total.wins} Gewinner / {shown.total.losses} Verlierer</div>
+	</div>
+	<div class="kpi">
+		<div class="label">Offene Positionen · jetzt</div>
+		<div class="value {tone(posUnrealized)}">{live ? money(posUnrealized, 'USDT', { sign: true }) : '–'}</div>
+		<div class="sub">{live ? `${positions.length} ${positions.length === 1 ? 'Position' : 'Positionen'} · Margin ${money(posMargin, 'USDT', { digits: 0 })}` : liveError ? 'nicht abrufbar' : 'lade …'}</div>
+	</div>
+</div>
+
+<PositionsCard {live} error={liveError} />
+
+{#if view === 'kalender'}
+	<section class="card block">
+		<div class="cal-head">
+			<button class="ghost" onclick={() => shiftMonth(-1)} aria-label="Vormonat">‹</button>
+			<div class="cal-title">{monthLabel}</div>
+			<button class="ghost" onclick={() => shiftMonth(1)} aria-label="Folgemonat">›</button>
+			<button class="ghost small" onclick={() => setParam('m', lastDay.slice(0, 7))}>Letzter Handelsmonat</button>
+		</div>
+		<div class="cal">
+			{#each [...WEEKDAYS, 'Woche'] as w (w)}<div class="wd">{w}</div>{/each}
+			{#each weeks as row, ri (ri)}
+				{#each row.days as d, di (di)}
+					{#if d}
+						{@const b = monthStats.byDay.get(d)}
+						{#if b}
+							<a class="cell has {tone(b.net)}" class:today={d === today} href={`/futures/tag/${d}?cur=${cur}`}>
+								<span class="dnum">{Number(d.slice(8))}</span>
+								<span class="dval mono">{fmt(b.net, true)}</span>
+								<span class="dsub">{b.trades ? `${b.trades} ${b.trades === 1 ? 'Trade' : 'Trades'}` : 'Funding/Gebühr'}</span>
+							</a>
+						{:else}
+							<div class="cell" class:today={d === today}><span class="dnum">{Number(d.slice(8))}</span></div>
+						{/if}
+					{:else}
+						<div class="cell blank"></div>
+					{/if}
+				{/each}
+				<div class="cell week {row.sum ? tone(row.sum.net) : ''}">
+					{#if row.sum}
+						<span class="dval mono">{fmt(row.sum.net, true)}</span>
+						<span class="dsub">{row.sum.trades ? `${row.sum.trades} ${row.sum.trades === 1 ? 'Trade' : 'Trades'}` : 'Funding/Gebühr'}</span>
+					{/if}
+				</div>
+			{/each}
+		</div>
+	</section>
 
 	{#if monthStats.cumulative.length > 1}
-		<section class="card" style="margin-top:16px">
+		<section class="card block">
 			<div class="card-title">Kumuliertes Ergebnis im Monat (netto)</div>
 			<LineChart labels={monthStats.cumulative.map((c) => c.day.slice(8) + '.')} values={monthStats.cumulative.map((c) => c.value.toNumber())} format={fmtN} />
 		</section>
 	{/if}
-{:else}
-	<div class="toolbar" style="margin-bottom:16px">
-		<div class="seg" role="group" aria-label="Zeitraum">
-			<button aria-pressed={period === 'monat'} onclick={() => setParam('p', 'monat')}>Monat</button>
-			<button aria-pressed={period === 'jahr'} onclick={() => setParam('p', 'jahr')}>Jahr</button>
-			<button aria-pressed={period === 'gesamt'} onclick={() => setParam('p', 'gesamt')}>Gesamt</button>
-		</div>
-		{#if period === 'jahr'}
-			<select value={year} onchange={(e) => setParam('y', e.currentTarget.value)} aria-label="Jahr">
-				{#each years as y (y)}<option value={y}>{y}</option>{/each}
-			</select>
-		{:else if period === 'monat'}
-			<button class="ghost" onclick={() => shiftMonth(-1)} aria-label="Vormonat">‹</button>
-			<span>{rangeLabel}</span>
-			<button class="ghost" onclick={() => shiftMonth(1)} aria-label="Folgemonat">›</button>
-		{/if}
+{:else if stats.cumulative.length > 1}
+	<section class="card block">
+		<div class="card-title">Kumuliertes Ergebnis (netto) · {rangeLabel}</div>
+		<LineChart labels={stats.cumulative.map((c) => c.day)} values={stats.cumulative.map((c) => c.value.toNumber())} format={fmtN} height={260} />
+	</section>
+{/if}
+
+<section class="card block">
+	<div class="card-title">Kennzahlen im Detail · {shownLabel}</div>
+	<div class="detail-grid">
+		<div><div class="muted small">Ø je Trade netto</div><strong class="mono {tone(shown.expectancy)}">{fmt(shown.expectancy, true)}</strong><div class="muted small">inkl. Gebühren und Funding</div></div>
+		<div><div class="muted small">Ø Gewinn · Ø Verlust</div><strong class="mono"><span class="gain">{fmt(shown.avgWin, true)}</span> · <span class="loss">{fmt(shown.avgLoss)}</span></strong></div>
+		<div><div class="muted small">Profit-Faktor · Payoff</div><strong class="mono">{ratio(shown.profitFactor)} · {ratio(shown.payoff)}</strong><div class="muted small">Gewinne ÷ Verluste</div></div>
+		<div><div class="muted small">Gebührenanteil</div><strong class="mono">{pct(shown.feeShare, 0)}</strong><div class="muted small">der Brutto-Gewinne</div></div>
+		<div><div class="muted small">Handelstage Plus / Minus</div><strong class="mono">{shown.days.win} / {shown.days.loss}</strong><div class="muted small">Quote {pct(shown.days.total ? shown.days.win / shown.days.total : null, 0)}</div></div>
+		<div><div class="muted small">Long / Short</div><strong class="mono">{shown.byDir.long.trades} / {shown.byDir.short.trades}</strong><div class="muted small">{fmt(shown.byDir.long.pnl, true)} / {fmt(shown.byDir.short.pnl, true)}</div></div>
+		<div><div class="muted small">Längste Serie Gewinn / Verlust</div><strong class="mono">{shown.streakWin} / {shown.streakLoss}</strong></div>
+		<div><div class="muted small">Max. Rückgang</div><strong class="mono loss">{fmt(shown.maxDrawdown.neg())}</strong><div class="muted small">auf Tagesbasis, netto</div></div>
 	</div>
+</section>
 
-	<div class="kpis">
-		<div class="kpi"><div class="label">Ergebnis netto · {rangeLabel}</div><div class="value {tone(stats.total.net)}">{fmt(stats.total.net, true)}</div><div class="sub">Trades brutto {fmt(stats.total.pnl, true)}</div></div>
-		<div class="kpi"><div class="label">Gebühren</div><div class="value">{fmt(stats.total.fees)}</div><div class="sub">{pct(stats.feeShare, 0)} der Brutto-Gewinne</div></div>
-		<div class="kpi"><div class="label">Funding</div><div class="value {tone(stats.total.funding)}">{fmt(stats.total.funding, true)}</div><div class="sub">Sonstiges {fmt(stats.total.other, true)}</div></div>
-		<div class="kpi"><div class="label">Trades · Trefferquote</div><div class="value">{stats.total.trades} · {pct(stats.winPct, 0)}</div><div class="sub">{stats.total.wins} / {stats.total.losses}</div></div>
-		<div class="kpi"><div class="label">Profit-Faktor · Payoff</div><div class="value">{ratio(stats.profitFactor)} · {ratio(stats.payoff)}</div><div class="sub">Brutto-Gewinne / -Verluste</div></div>
-		<div class="kpi"><div class="label">Ø Gewinn · Ø Verlust</div><div class="value small-value"><span class="gain">{fmt(stats.avgWin, true)}</span> · <span class="loss">{fmt(stats.avgLoss)}</span></div><div class="sub">Erwartung je Trade {fmt(stats.expectancy, true)}</div></div>
-		<div class="kpi"><div class="label">Serien</div><div class="value">{stats.streakWin} / {stats.streakLoss}</div><div class="sub">längste Gewinn- / Verlustserie</div></div>
-		<div class="kpi"><div class="label">Max. Rückgang</div><div class="value loss">{fmt(stats.maxDrawdown.neg())}</div><div class="sub">auf Tagesbasis, netto</div></div>
-	</div>
-
-	{#if stats.cumulative.length > 1}
-		<section class="card" style="margin-top:16px">
-			<div class="card-title">Kumuliertes Ergebnis (netto)</div>
-			<LineChart labels={stats.cumulative.map((c) => c.day)} values={stats.cumulative.map((c) => c.value.toNumber())} format={fmtN} height={260} />
-		</section>
-	{/if}
-
-	<div class="grid-2" style="margin-top:16px">
+{#if view === 'statistik'}
+	<div class="grid-2 block">
 		<section class="card">
 			<div class="card-title">Long vs. Short</div>
 			<table>
@@ -238,11 +261,10 @@
 				</tbody>
 			</table>
 		</section>
-
 		{#if period !== 'monat'}
 			<section class="card">
 				<div class="card-title">Nach Monat</div>
-				<div class="table-wrap" style="max-height:260px;overflow-y:auto">
+				<div class="table-wrap scroll-260">
 					<table>
 						<thead><tr><th>Monat</th><th class="num">Trades</th><th class="num">Brutto</th><th class="num">Gebühren</th><th class="num">Funding</th><th class="num">Netto</th></tr></thead>
 						<tbody>
@@ -282,7 +304,7 @@
 
 		<section class="card">
 			<div class="card-title">Nach Uhrzeit (Schließzeitpunkt, deutsche Zeit)</div>
-			<div class="table-wrap" style="max-height:360px;overflow-y:auto">
+			<div class="table-wrap scroll-360">
 				<table>
 					<thead><tr><th>Stunde</th><th class="num">Trades</th><th class="num">Treffer</th><th class="num">Ergebnis</th><th style="width:30%"></th></tr></thead>
 					<tbody>
@@ -303,27 +325,42 @@
 		</section>
 	</div>
 
-	<details class="card help">
-		<summary>So sind die Zahlen zu lesen</summary>
-		<ul class="small">
-			<li><strong>Trade</strong> = ein Schließ-Ereignis mit realisiertem Ergebnis. Teilschließungen zählen einzeln.</li>
-			<li><strong>Brutto</strong> = realisierte Ergebnisse ohne Gebühren und Funding, <strong>netto</strong> = alles zusammen.</li>
-			<li><strong>Profit-Faktor</strong> = Summe Gewinne / Summe Verluste. <strong>Payoff</strong> = Ø Gewinn / Ø Verlust.</li>
-			<li>Wochentag und Uhrzeit beziehen sich auf den Schließzeitpunkt. EUR über den EZB-Tageskurs.</li>
-			<li>Symbol, Preise und Positionsgrößen gibt es in der Tagesansicht für Trades ab ca. September 2025.</li>
-		</ul>
-	</details>
 {/if}
 
+<HelpBox>
+	<ul>
+		<li><strong>Kennzahlen oben</strong> gelten für das, was darunter gezeigt wird: im Kalender für den Monat, in der Statistik für den gewählten Zeitraum. „Offene Positionen“ ist immer der Stand jetzt.</li>
+		<li><strong>Trade</strong> = ein Schließ-Ereignis mit realisiertem Ergebnis. Teilschließungen zählen einzeln.</li>
+		<li><strong>Brutto</strong> = realisierte Ergebnisse ohne Gebühren und Funding, <strong>netto</strong> = alles zusammen.</li>
+		<li><strong>Profit-Faktor</strong> = Summe Gewinne / Summe Verluste. <strong>Payoff</strong> = Ø Gewinn / Ø Verlust.</li>
+		<li>Wochentag und Uhrzeit beziehen sich auf den Schließzeitpunkt. EUR über den EZB-Tageskurs.</li>
+		<li>Symbol, Preise und Positionsgrößen gibt es in der Tagesansicht (Klick auf einen Kalendertag) für Trades ab ca. September 2025.</li>
+	</ul>
+</HelpBox>
+
 <style>
-	.cal-layout {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) 260px;
-		gap: 16px;
-		align-items: start;
+	.month-nav {
+		display: flex;
+		align-items: center;
+		gap: 6px;
 	}
-	.side-kpis {
-		grid-template-columns: 1fr;
+	.detail-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+		gap: 14px 24px;
+	}
+	.detail-grid strong {
+		display: block;
+		margin: 2px 0;
+		font-variant-numeric: tabular-nums;
+	}
+	.scroll-260 {
+		max-height: 260px;
+		overflow-y: auto;
+	}
+	.scroll-360 {
+		max-height: 360px;
+		overflow-y: auto;
 	}
 	.cal-head {
 		display: flex;
@@ -408,9 +445,6 @@
 		font-size: 0.7rem;
 		color: var(--muted);
 	}
-	.small-value {
-		font-size: 1.05rem;
-	}
 	.bar {
 		height: 8px;
 		border-radius: 4px;
@@ -421,21 +455,6 @@
 	}
 	.bar.loss {
 		background: var(--loss);
-	}
-	.help {
-		margin-top: 16px;
-	}
-	.help summary {
-		cursor: pointer;
-		font-weight: 600;
-	}
-	@media (max-width: 1100px) {
-		.cal-layout {
-			grid-template-columns: 1fr;
-		}
-		.side-kpis {
-			grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-		}
 	}
 	@media (max-width: 640px) {
 		.cell {
