@@ -122,7 +122,7 @@
 {#if broker !== 'Bitget' && data.kucoinError}<p class="error small">KuCoin nicht erreichbar: {data.kucoinError}</p>{/if}
 
 <Zone title="Aktueller Stand" now at={live?.at ?? null}>
-	<div class="grid-half">
+	<div class="grid-3-1">
 		<section class="card">
 			<div class="card-title">Earn- und Staking-Positionen · {cur === 'EUR' ? '€' : 'USDT'}</div>
 			{#if !live}
@@ -130,7 +130,7 @@
 			{:else if !positions.length}
 				<p class="muted small">Derzeit nichts im Earn oder Staking.</p>
 			{:else}
-				<div class="table-wrap scroll-340">
+				<div class="table-wrap scroll-now">
 					<table>
 						<thead>
 							<tr>
@@ -158,7 +158,7 @@
 				</div>
 			{/if}
 		</section>
-		<div class="kpis tiles-2x2">
+		<div class="kpis tiles-stack">
 			<div class="kpi">
 				<div class="label">Earn-Bestand</div>
 				<div class="value">{fmt(positionsTotal)}</div>
@@ -275,6 +275,10 @@
 </HelpBox>
 
 <style>
+	.scroll-now {
+		max-height: 480px;
+		overflow-y: auto;
+	}
 	.scroll-340 {
 		max-height: 340px;
 		overflow-y: auto;

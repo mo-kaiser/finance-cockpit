@@ -121,10 +121,10 @@
 {#if tax}
 	<Zone title="Aktueller Stand" now at={live?.at ?? null}>
 		{#if broker !== 'KuCoin' && data.liveError}<p class="error small">Bitget nicht erreichbar: {data.liveError}</p>{/if}
-		<div class="grid-half">
+		<div class="grid-3-1">
 			<section class="card">
 				<div class="card-title">Bestände Spot + Earn · EUR</div>
-				<div class="table-wrap scroll-340">
+				<div class="table-wrap scroll-now">
 					<table>
 						<thead><tr><th>Coin</th><th class="num">Menge</th><th class="num">Wert</th><th class="num">Einstand</th><th class="num">Unrealisiert</th></tr></thead>
 						<tbody>
@@ -143,7 +143,7 @@
 					</table>
 				</div>
 			</section>
-			<div class="kpis tiles-2x2">
+			<div class="kpis tiles-stack">
 				<div class="kpi">
 					<div class="label">Bestandswert</div>
 					<div class="value">{portfolio ? money(holdValue, 'EUR') : '–'}</div>
@@ -281,6 +281,10 @@
 {/if}
 
 <style>
+	.scroll-now {
+		max-height: 480px;
+		overflow-y: auto;
+	}
 	.check {
 		display: flex;
 		align-items: center;

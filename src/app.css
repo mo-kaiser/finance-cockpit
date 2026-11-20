@@ -349,6 +349,29 @@ th.num {
 	margin: 0;
 }
 
+/* Tabelle ¾ | Kacheln ¼ untereinander (Aktueller Stand auf Spot und Earn) */
+.grid-3-1 {
+	display: grid;
+	grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+	gap: 16px;
+	align-items: stretch;
+}
+
+.tiles-stack {
+	grid-template-columns: 1fr;
+	grid-auto-rows: 1fr;
+	margin: 0;
+}
+
+@media (max-width: 1000px) {
+	.grid-3-1 {
+		grid-template-columns: 1fr;
+	}
+	.tiles-stack {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
 /* Grafik halbe Breite, daneben eine passende Tabelle */
 .grid-half {
 	display: grid;
