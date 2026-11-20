@@ -44,6 +44,8 @@
 	}
 
 	const fmt = (d: Decimal | null, sign = false) => money(d, cur, { sign, unit: false });
+	const fmtU = (d: Decimal | null, sign = false) => money(d, cur, { sign });
+	const unit = $derived(cur === 'EUR' ? '€' : 'USDT');
 	const fmtN = (v: number) => (cur === 'EUR' ? `${v.toLocaleString('de-DE', { maximumFractionDigits: 0 })} €` : v.toLocaleString('de-DE', { maximumFractionDigits: 0 }));
 
 	// ---------- Kalender ----------
@@ -132,7 +134,7 @@
 
 {#snippet longShort()}
 <section class="card">
-	<div class="card-title">Long vs. Short</div>
+	<div class="card-title">Long vs. Short · {unit}</div>
 	<table>
 		<thead><tr><th>Richtung</th><th class="num">Trades</th><th class="num">Anteil</th><th class="num">Treffer</th><th class="num">Ergebnis brutto</th></tr></thead>
 		<tbody>
@@ -153,7 +155,7 @@
 
 {#snippet monthTable(st: typeof stats, title: string, current: string | null)}
 	<section class="card">
-		<div class="card-title">{title}</div>
+		<div class="card-title">{title} · {unit}</div>
 		<div class="table-wrap month-scroll">
 			<table>
 				<thead><tr><th>Monat</th><th class="num">Trades</th><th class="num">Brutto</th><th class="num">Gebühren</th><th class="num">Funding</th><th class="num">Netto</th></tr></thead>
@@ -210,6 +212,7 @@
 				<button class="ghost" onclick={() => shiftMonth(-1)} aria-label="Vormonat">‹</button>
 				<div class="cal-title">{MONTHS[Number(month.slice(5)) - 1]} {month.slice(0, 4)}</div>
 				<button class="ghost" onclick={() => shiftMonth(1)} aria-label="Folgemonat">›</button>
+				<span class="muted small cal-unit">Beträge in {unit}</span>
 				<button class="ghost small" onclick={() => setParam('m', lastDay.slice(0, 7))}>Letzter Handelsmonat</button>
 			</div>
 			<div class="cal" style="grid-template-rows: auto repeat({weeks.length}, minmax(78px, 1fr))">
@@ -244,13 +247,13 @@
 		<aside class="kpis side-kpis">
 			<div class="kpi">
 				<div class="label">Monat netto</div>
-				<div class="value {tone(monthStats.total.net)}">{fmt(monthStats.total.net, true)}</div>
-				<div class="sub">Trades brutto {fmt(monthStats.total.pnl, true)}</div>
+				<div class="value {tone(monthStats.total.net)}">{fmtU(monthStats.total.net, true)}</div>
+				<div class="sub">Trades brutto {fmtU(monthStats.total.pnl, true)}</div>
 			</div>
 			<div class="kpi">
 				<div class="label">Gebühren · Funding</div>
-				<div class="value">{fmt(monthStats.total.fees)}</div>
-				<div class="sub">Funding {fmt(monthStats.total.funding, true)}</div>
+				<div class="value">{fmtU(monthStats.total.fees)}</div>
+				<div class="sub">Funding {fmtU(monthStats.total.funding, true)}</div>
 			</div>
 			<div class="kpi">
 				<div class="label">Trades · Trefferquote</div>
@@ -264,13 +267,18 @@
 			</div>
 			<div class="kpi">
 				<div class="label">Ø je Trade netto</div>
-				<div class="value {tone(monthStats.expectancy)}">{fmt(monthStats.expectancy, true)}</div>
+				<div class="value {tone(monthStats.expectancy)}">{fmtU(monthStats.expectancy, true)}</div>
 				<div class="sub">inkl. Gebühren und Funding</div>
 			</div>
 			<div class="kpi">
 				<div class="label">Long / Short</div>
 				<div class="value">{monthStats.byDir.long.trades} / {monthStats.byDir.short.trades}</div>
-				<div class="sub">{fmt(monthStats.byDir.long.pnl, true)} / {fmt(monthStats.byDir.short.pnl, true)}</div>
+				<div class="sub">{fmt(monthStats.byDir.long.pnl, true)} / {fmtU(monthStats.byDir.short.pnl, true)}</div>
+			</div>
+			<div class="kpi">
+				<div class="label">Profit-Faktor · Payoff</div>
+				<div class="value">{ratio(monthStats.profitFactor)} · {ratio(monthStats.payoff)}</div>
+				<div class="sub">Gewinne ÷ Verluste · Ø Gewinn ÷ Ø Verlust</div>
 			</div>
 			<div class="kpi kpi-now">
 				<div class="label">Futures-Konto · aktuell</div>
@@ -282,7 +290,7 @@
 
 	<div class="grid-half block">
 		<section class="card">
-			<div class="card-title">Kumuliertes Ergebnis im Monat (netto)</div>
+			<div class="card-title">Kumuliertes Ergebnis im Monat (netto, {unit})</div>
 			{#if monthStats.cumulative.length > 1}
 				<LineChart labels={monthStats.cumulative.map((c) => c.day.slice(8) + '.')} values={monthStats.cumulative.map((c) => c.value.toNumber())} format={fmtN} height={340} />
 			{:else}
@@ -293,19 +301,19 @@
 	</div>
 {:else}
 	<div class="kpis kpis-4">
-		<div class="kpi"><div class="label">Ergebnis netto · {rangeLabel}</div><div class="value {tone(stats.total.net)}">{fmt(stats.total.net, true)}</div><div class="sub">Trades brutto {fmt(stats.total.pnl, true)}</div></div>
-		<div class="kpi"><div class="label">Gebühren</div><div class="value">{fmt(stats.total.fees)}</div><div class="sub">{pct(stats.feeShare, 0)} der Brutto-Gewinne</div></div>
-		<div class="kpi"><div class="label">Funding</div><div class="value {tone(stats.total.funding)}">{fmt(stats.total.funding, true)}</div><div class="sub">Sonstiges {fmt(stats.total.other, true)}</div></div>
+		<div class="kpi"><div class="label">Ergebnis netto · {rangeLabel}</div><div class="value {tone(stats.total.net)}">{fmtU(stats.total.net, true)}</div><div class="sub">Trades brutto {fmtU(stats.total.pnl, true)}</div></div>
+		<div class="kpi"><div class="label">Gebühren</div><div class="value">{fmtU(stats.total.fees)}</div><div class="sub">{pct(stats.feeShare, 0)} der Brutto-Gewinne</div></div>
+		<div class="kpi"><div class="label">Funding</div><div class="value {tone(stats.total.funding)}">{fmtU(stats.total.funding, true)}</div><div class="sub">Sonstiges {fmtU(stats.total.other, true)}</div></div>
 		<div class="kpi"><div class="label">Trades · Trefferquote</div><div class="value">{stats.total.trades} · {pct(stats.winPct, 0)}</div><div class="sub">{stats.total.wins} / {stats.total.losses}</div></div>
 		<div class="kpi"><div class="label">Profit-Faktor · Payoff</div><div class="value">{ratio(stats.profitFactor)} · {ratio(stats.payoff)}</div><div class="sub">Brutto-Gewinne / -Verluste</div></div>
-		<div class="kpi"><div class="label">Ø Gewinn · Ø Verlust</div><div class="value small-value"><span class="gain">{fmt(stats.avgWin, true)}</span> · <span class="loss">{fmt(stats.avgLoss)}</span></div><div class="sub">Erwartung je Trade {fmt(stats.expectancy, true)}</div></div>
+		<div class="kpi"><div class="label">Ø Gewinn · Ø Verlust</div><div class="value small-value"><span class="gain">{fmt(stats.avgWin, true)}</span> · <span class="loss">{fmtU(stats.avgLoss)}</span></div><div class="sub">Erwartung je Trade {fmtU(stats.expectancy, true)}</div></div>
 		<div class="kpi"><div class="label">Serien</div><div class="value">{stats.streakWin} / {stats.streakLoss}</div><div class="sub">längste Gewinn- / Verlustserie</div></div>
-		<div class="kpi"><div class="label">Max. Rückgang</div><div class="value loss">{fmt(stats.maxDrawdown.neg())}</div><div class="sub">auf Tagesbasis, netto</div></div>
+		<div class="kpi"><div class="label">Max. Rückgang</div><div class="value loss">{fmtU(stats.maxDrawdown.neg())}</div><div class="sub">auf Tagesbasis, netto</div></div>
 	</div>
 
 	<div class="grid-half block">
 		<section class="card">
-			<div class="card-title">Kumuliertes Ergebnis (netto) · {rangeLabel}</div>
+			<div class="card-title">Kumuliertes Ergebnis (netto, {unit}) · {rangeLabel}</div>
 			{#if stats.cumulative.length > 1}
 				<LineChart labels={stats.cumulative.map((c) => c.day)} values={stats.cumulative.map((c) => c.value.toNumber())} format={fmtN} height={340} />
 			{:else}
@@ -324,7 +332,7 @@
 
 
 		<section class="card">
-			<div class="card-title">Nach Wochentag (Trades, brutto)</div>
+			<div class="card-title">Nach Wochentag (Trades, brutto, {unit})</div>
 			<table>
 				<thead><tr><th>Tag</th><th class="num">Trades</th><th class="num">Treffer</th><th class="num">Ergebnis</th><th style="width:30%"></th></tr></thead>
 				<tbody>
@@ -342,7 +350,7 @@
 		</section>
 
 		<section class="card">
-			<div class="card-title">Nach Uhrzeit (Schließzeitpunkt, deutsche Zeit)</div>
+			<div class="card-title">Nach Uhrzeit (Schließzeitpunkt, deutsche Zeit, {unit})</div>
 			<div class="table-wrap" style="max-height:360px;overflow-y:auto">
 				<table>
 					<thead><tr><th>Stunde</th><th class="num">Trades</th><th class="num">Treffer</th><th class="num">Ergebnis</th><th style="width:30%"></th></tr></thead>
@@ -389,7 +397,7 @@
 	}
 	.cal-layout {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) 260px;
+		grid-template-columns: minmax(0, 1fr) 440px;
 		gap: 16px;
 		align-items: stretch;
 	}
@@ -416,13 +424,21 @@
 		background: var(--accent-soft);
 	}
 	.side-kpis {
-		grid-template-columns: 1fr;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-rows: repeat(4, 1fr);
+		grid-auto-flow: column;
 	}
 	.cal-head {
 		display: flex;
 		align-items: center;
 		gap: 8px;
 		margin-bottom: 12px;
+	}
+	.cal-unit {
+		margin-left: auto;
+	}
+	.cal-head button.small {
+		margin-left: 4px;
 	}
 	.cal-title {
 		font-weight: 600;
@@ -528,6 +544,8 @@
 		}
 		.side-kpis {
 			grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+			grid-template-rows: none;
+			grid-auto-flow: row;
 		}
 	}
 	@media (max-width: 640px) {
