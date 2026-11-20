@@ -1,6 +1,5 @@
 <script lang="ts">
 	import Decimal from 'decimal.js';
-	import { invalidate } from '$app/navigation';
 	import { futuresEvents, futuresStats, inRange } from '#lib/analysis/futures.ts';
 	import { buildPortfolio, type Account } from '#lib/analysis/portfolio.ts';
 	import { money, pct, qty, tone } from '#lib/format.ts';
@@ -15,6 +14,10 @@
 	import { buildMovements, shortAddr, type Bucket } from '#lib/analysis/transfers.ts';
 
 	import BrokerSelect from '#lib/components/BrokerSelect.svelte';
+	import RefreshButton from '#lib/components/RefreshButton.svelte';
+	import PositionsCard from '#lib/components/PositionsCard.svelte';
+	import HelpBox from '#lib/components/HelpBox.svelte';
+	import Zone from '#lib/components/Zone.svelte';
 	import { brokerLabel, brokerState, holdingsFor, liveFor } from '#lib/broker.svelte.ts';
 
 	let { data } = $props();
@@ -30,7 +33,6 @@
 	];
 	let account = $state<Account | 'all'>('all');
 	let hideDust = $state(true);
-	let refreshing = $state(false);
 
 	/** Live-Bestände der gewählten Börse(n) im Bitget-Format */
 	const liveAll = $derived(liveFor('Alle', data.live, data.kucoin));
@@ -74,48 +76,14 @@
 		return { sum, covered };
 	});
 
-	const positions = $derived(live?.positions.ok ? live.positions.data : []);
-	const posUnrealized = $derived(positions.reduce((s, p) => s.add(p.unrealizedPL || 0), new Decimal(0)));
 
-	// Futures-Ergebnis laufender Monat und laufendes Jahr
-	const fut = $derived.by(() => {
-		if (!data.ledger) return null;
-		const ev = futuresEvents(data.ledger.ledger, fx);
-		const now = new Date().toISOString().slice(0, 10);
-		return {
-			month: futuresStats(inRange(ev, now.slice(0, 7) + '-01', now), 'USDT'),
-			year: futuresStats(inRange(ev, now.slice(0, 4) + '-01-01', now), 'USDT')
-		};
+	// Aufteilung des Gesamtwerts auf die Konten der gewählten Börse
+	const split = $derived.by(() => {
+		if (!live) return null;
+		const t = (acc: Account) => buildPortfolio(live!, eurPerUsdt, [], new Set([acc])).totalEur;
+		return { spot: t('spot'), earn: t('earn'), futures: t('futures') };
 	});
-
-	// Abgleich: Kontosummen laut Bitget vs. was das Cockpit je Konto erfasst
-	const ACCOUNT_LABEL: Record<string, string> = {
-		spot: 'Spot',
-		futures: 'Futures',
-		earn: 'Earn',
-		funding: 'Funding',
-		bots: 'Bots',
-		margin: 'Margin',
-		crossed_margin: 'Cross Margin',
-		isolated_margin: 'Isolated Margin',
-		copy_trading: 'Copy-Trading',
-		otc: 'OTC',
-		p2p: 'P2P'
-	};
-	const reconcile = $derived.by(() => {
-		if (!live?.accounts.ok) return null;
-		const ours = (acc: Account) => buildPortfolio(live!, eurPerUsdt, [], new Set([acc])).totalUsdt;
-		const known: Record<string, Decimal> = { spot: ours('spot'), futures: ours('futures'), earn: ours('earn') };
-		const rows = live.accounts.data
-			.map((a) => {
-				const bitget = new Decimal(a.usdtBalance || 0);
-				const cockpit = known[a.accountType] ?? null;
-				return { type: a.accountType, label: ACCOUNT_LABEL[a.accountType] ?? a.accountType, bitget, cockpit, diff: bitget.sub(cockpit ?? 0) };
-			})
-			.filter((r) => !r.bitget.isZero() || (r.cockpit && !r.cockpit.isZero()));
-		const gap = rows.reduce((s, r) => s.add(r.diff.abs()), new Decimal(0));
-		return { rows, gap };
-	});
+	const totalAll = $derived(split?.spot && split.earn && split.futures ? split.spot.add(split.earn).add(split.futures) : null);
 
 	const errors = $derived(
 		live
@@ -133,14 +101,6 @@
 				).flatMap(([label, s]) => (s.ok ? [] : [`${label}: ${s.error}`]))
 			: []
 	);
-
-	async function refresh() {
-		refreshing = true;
-		await invalidate('app:live');
-		refreshing = false;
-	}
-
-	const D = (s: string) => new Decimal(s || 0);
 
 	const sync = $derived(data.syncRuns ? assessSync(data.syncRuns) : null);
 
@@ -212,6 +172,14 @@
 	const histLast = $derived(histShown.at(-1) ?? null);
 	/** Wertänderung im Zeitraum ohne Ein-/Auszahlungen = Ergebnis */
 	const histResult = $derived(histFirst && histLast ? histLast.valueEur - histFirst.valueEur - (histLast.investedEur - histFirst.investedEur) : null);
+	const rangeFrom = $derived(histFirst?.day ?? '');
+	/** Futures-Ergebnis im gewählten Zeitraum (netto, USDT) */
+	const futRange = $derived.by(() => {
+		if (!data.ledger || !rangeFrom) return null;
+		const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
+		return futuresStats(inRange(futuresEvents(data.ledger.ledger, fx), rangeFrom, today), 'USDT');
+	});
+	const rangeLabel = $derived(RANGES.find((x) => x.key === range)!.label);
 	const eurFmt = (v: number) => v.toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
 	const dayDe = (d: string) => `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(2, 4)}`;
 
@@ -237,19 +205,14 @@
 	<h1>Dashboard</h1>
 	<div class="toolbar">
 		<BrokerSelect show={!!data.kucoin} />
-		<div class="seg" role="group" aria-label="Konto">
-			{#each ACCOUNTS as a (a.key)}
-				<button aria-pressed={account === a.key} onclick={() => (account = a.key)}>{a.label}</button>
-			{/each}
-		</div>
-		<button class="ghost" onclick={refresh} disabled={refreshing}>{refreshing ? 'Lade …' : 'Aktualisieren'}</button>
+		<RefreshButton />
 	</div>
 </div>
 
 {#if sync}
 	<p class="sync sync-{sync.level}" title={sync.problems.join('\n')}>
 		<span class="dot" aria-hidden="true"></span>
-		Täglicher Abruf: zuletzt erfolgreich {berlin(sync.lastSuccess)} ({ago(sync.lastSuccess)})
+		Täglicher Abruf der Buchungen: zuletzt erfolgreich {berlin(sync.lastSuccess)} ({ago(sync.lastSuccess)})
 		{#if sync.level !== 'ok'}· <a href="/system">{sync.problems[0]}</a>{/if}
 	</p>
 {/if}
@@ -258,199 +221,152 @@
 {#if data.ledgerError}<p class="error">{data.ledgerError}</p>{/if}
 {#each errors as e (e)}<p class="error small">{e}</p>{/each}
 
-{#if portfolio}
-	<div class="kpis">
-		<div class="kpi">
-			<div class="label">Gesamtwert {account === 'all' ? '' : `· ${ACCOUNTS.find((a) => a.key === account)?.label}`}</div>
-			<div class="value">{money(portfolio.totalEur, 'EUR')}</div>
-			<div class="sub">{money(portfolio.totalUsdt, 'USDT')}</div>
-		</div>
-		<div class="kpi">
-			<div class="label">Unrealisiert (Coins)</div>
-			<div class="value {tone(unrealized?.sum)}">{money(unrealized?.sum ?? null, 'EUR', { sign: true })}</div>
-			<div class="sub">für {money(unrealized?.covered ?? null, 'USDT', { digits: 0 })} mit bekanntem Einstand</div>
-		</div>
-		<div class="kpi">
-			<div class="label">Offene Positionen</div>
-			<div class="value {tone(posUnrealized)}">{money(posUnrealized, 'USDT', { sign: true })}</div>
-			<div class="sub">{positions.length} {positions.length === 1 ? 'Position' : 'Positionen'}</div>
-		</div>
-		{#if fut}
+<Zone title="Aktueller Stand" now at={live?.at ?? null}>
+	{#if portfolio}
+		<div class="kpis">
 			<div class="kpi">
-				<div class="label">Futures netto · Monat / Jahr</div>
-				<div class="value {tone(fut.month.total.net)}">{money(fut.month.total.net, 'USDT', { sign: true })}</div>
-				<div class="sub {tone(fut.year.total.net)}">Jahr {money(fut.year.total.net, 'USDT', { sign: true })} · {fut.year.total.trades} Trades</div>
+				<div class="label">Gesamtwert</div>
+				<div class="value">{money(totalAll, 'EUR')}</div>
+				<div class="sub">{brokerLabel(broker)} · alle Konten</div>
 			</div>
-		{/if}
-	</div>
-
-	<section class="card" style="margin-top:16px">
-		<div class="head-row">
-			<div class="card-title">Bestände</div>
-			<label class="check"><input type="checkbox" bind:checked={hideDust} /> Kleinstbeträge unter 1 USDT ausblenden{hidden ? ` (${hidden})` : ''}</label>
-		</div>
-		<div class="table-wrap">
-			<table>
-				<thead>
-					<tr>
-						<th>Coin</th>
-						<th class="num">Menge</th>
-						{#if account === 'all'}<th class="num">Spot</th><th class="num">Earn</th><th class="num">Futures</th>{/if}
-						<th class="num">Kurs (USDT)</th>
-						<th class="num">Wert (EUR)</th>
-						<th class="num">Anteil</th>
-						<th class="num">Einstand (EUR)</th>
-						<th class="num">Unrealisiert</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each rows as r (r.coin)}
-						<tr>
-							<td><strong>{r.coin}</strong></td>
-							<td class="num">{qty(r.qty, 6)}</td>
-							{#if account === 'all'}
-								<td class="num muted">{r.byAccount.spot.isZero() ? '' : qty(r.byAccount.spot, 6)}</td>
-								<td class="num muted">{r.byAccount.earn.isZero() ? '' : qty(r.byAccount.earn, 6)}</td>
-								<td class="num muted">{r.byAccount.futures.isZero() ? '' : qty(r.byAccount.futures, 2)}</td>
-							{/if}
-							<td class="num">{r.price ? qty(r.price, r.price.lt(1) ? 6 : 2) : '–'}</td>
-							<td class="num"><strong>{money(r.valueEur, 'EUR')}</strong></td>
-							<td class="num muted">{pct(r.share)}</td>
-							<td class="num" title={r.costNote ?? ''}>
-								{r.costEur ? money(r.costEur, 'EUR') : '–'}
-								{#if r.costEur && r.covered}<div class="note">für {Math.round(r.covered * 100)} % des Bestands</div>
-								{:else if r.costEur && r.costNote?.includes('geschätzt')}<div class="note">teils geschätzt</div>{/if}
-							</td>
-							<td class="num {tone(r.unrealizedEur)}" title={r.costNote ?? ''}>
-								{#if r.unrealizedEur}{money(r.unrealizedEur, 'EUR', { sign: true })}{:else}<span class="note">{r.costNote ? (r.costNote.includes('ohne bekannte') ? 'Einstand teils unbekannt' : r.costNote.startsWith('Historie') ? 'Bestand ≠ Historie' : r.costNote) : '–'}</span>{/if}
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
-		{#if portfolio.unpriced.length}<p class="small muted">Ohne Kurs: {portfolio.unpriced.join(', ')}</p>{/if}
-		<p class="small muted">
-			Kurse und Bestände live von {brokerLabel(broker)} ({live ? new Date(live.at).toLocaleTimeString('de-DE') : ''}). Euro über den letzten EZB-Kurs. Einstand nach FIFO aus der Buchungshistorie – nur angezeigt, wenn die Historie den Bestand vollständig erklärt.
-		</p>
-	</section>
-
-	{#if reconcile && reconcile.rows.length}
-		<section class="card" style="margin-top:16px">
-			<div class="card-title">Abgleich mit den Kontosummen von Bitget</div>
-			<div class="table-wrap">
-				<table>
-					<thead><tr><th>Bitget-Konto</th><th class="num">laut Bitget (USDT)</th><th class="num">im Cockpit (USDT)</th><th class="num">Differenz</th></tr></thead>
-					<tbody>
-						{#each reconcile.rows as r (r.type)}
-							{@const off = r.diff.abs().gt(Decimal.max(1, r.bitget.abs().mul('0.01')))}
-							<tr>
-								<td>{r.label} <span class="muted small">({r.type})</span></td>
-								<td class="num">{qty(r.bitget, 2)}</td>
-								<td class="num">{r.cockpit ? qty(r.cockpit, 2) : '–'}</td>
-								<td class="num {off ? 'loss' : 'muted'}">{off ? qty(r.diff, 2) : 'passt'}</td>
-							</tr>
+			<div class="kpi">
+				<div class="label">Unrealisiert (Coins)</div>
+				<div class="value {tone(unrealized?.sum)}">{money(unrealized?.sum ?? null, 'EUR', { sign: true })}</div>
+				<div class="sub">für {money(unrealized?.covered ?? null, 'USDT', { digits: 0 })} mit bekanntem Einstand</div>
+			</div>
+			<div class="kpi">
+				<div class="label">Aufteilung</div>
+				{#if split}
+					<div class="split">
+						{#each [['Spot', split.spot], ['Earn', split.earn], ['Futures', split.futures]] as const as [l, v] (l)}
+							<div><span class="muted">{l}</span><strong>{money(v, 'EUR', { digits: 0 })}</strong></div>
 						{/each}
-					</tbody>
-				</table>
+					</div>
+				{/if}
 			</div>
-			<p class="small muted">
-				Bitget liefert je Kontotyp einen Gesamtwert. Eine Differenz zeigt, dass ein Teil des Vermögens in einem Bereich liegt, dessen Einzelbestände das Cockpit noch nicht abfragt.
-			</p>
-		</section>
-	{/if}
+			<PositionsCard {live} error={broker !== 'KuCoin' ? data.liveError : null} variant="list" href="/futures" />
+		</div>
 
-	{#if positions.length}
-		<section class="card" style="margin-top:16px">
-			<div class="card-title">Offene Futures-Positionen</div>
-			<div class="table-wrap">
-				<table>
-					<thead><tr><th>Symbol</th><th>Seite</th><th class="num">Größe</th><th class="num">Einstieg</th><th class="num">Mark</th><th class="num">Hebel</th><th class="num">Margin</th><th class="num">Liquidation</th><th class="num">Unrealisiert</th></tr></thead>
-					<tbody>
-						{#each positions as p (p.symbol + p.holdSide)}
-							<tr>
-								<td><strong>{p.symbol}</strong></td>
-								<td class={p.holdSide === 'long' ? 'gain' : 'loss'}>{p.holdSide === 'long' ? 'Long' : 'Short'}</td>
-								<td class="num">{qty(D(p.total), 6)}</td>
-								<td class="num">{qty(D(p.openPriceAvg), 6)}</td>
-								<td class="num">{qty(D(p.markPrice), 6)}</td>
-								<td class="num">{p.leverage}×</td>
-								<td class="num">{qty(D(p.marginSize), 2)}</td>
-								<td class="num muted">{p.liquidationPrice ? qty(D(p.liquidationPrice), 4) : '–'}</td>
-								<td class="num {tone(D(p.unrealizedPL))}">{money(D(p.unrealizedPL), 'USDT', { sign: true })}</td>
-							</tr>
+		<div class="block">
+			<section class="card">
+				<div class="head-row">
+					<div class="card-title">Bestände</div>
+					<div class="seg" role="group" aria-label="Konto">
+						{#each ACCOUNTS as a (a.key)}
+							<button aria-pressed={account === a.key} onclick={() => (account = a.key)}>{a.label}</button>
 						{/each}
-					</tbody>
-				</table>
-			</div>
-		</section>
+					</div>
+				</div>
+				<div class="table-wrap">
+					<table>
+						<thead>
+							<tr>
+								<th>Coin</th>
+								<th class="num">Menge</th>
+								{#if account === 'all'}<th class="num">Spot</th><th class="num">Earn</th><th class="num">Futures</th>{/if}
+								<th class="num">Kurs (USDT)</th>
+								<th class="num">Wert (EUR)</th>
+								<th class="num">Anteil</th>
+								<th class="num">Einstand (EUR)</th>
+								<th class="num">Unrealisiert (EUR)</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each rows as r (r.coin)}
+								<tr>
+									<td><strong>{r.coin}</strong></td>
+									<td class="num">{qty(r.qty, 6)}</td>
+									{#if account === 'all'}
+										<td class="num muted">{r.byAccount.spot.isZero() ? '' : qty(r.byAccount.spot, 6)}</td>
+										<td class="num muted">{r.byAccount.earn.isZero() ? '' : qty(r.byAccount.earn, 6)}</td>
+										<td class="num muted">{r.byAccount.futures.isZero() ? '' : qty(r.byAccount.futures, 2)}</td>
+									{/if}
+									<td class="num">{r.price ? qty(r.price, r.price.lt(1) ? 6 : 2) : '–'}</td>
+									<td class="num"><strong>{money(r.valueEur, 'EUR')}</strong></td>
+									<td class="num muted">{pct(r.share)}</td>
+									<td class="num" title={r.costNote ?? ''}>
+										{r.costEur ? money(r.costEur, 'EUR') : '–'}
+										{#if r.costEur && r.covered}<div class="note">für {Math.round(r.covered * 100)} % des Bestands</div>
+										{:else if r.costEur && r.costNote?.includes('geschätzt')}<div class="note">teils geschätzt</div>{/if}
+									</td>
+									<td class="num {tone(r.unrealizedEur)}" title={r.costNote ?? ''}>
+										{#if r.unrealizedEur}{money(r.unrealizedEur, 'EUR', { sign: true })}{:else}<span class="note">{r.costNote ? (r.costNote.includes('ohne bekannte') ? 'Einstand teils unbekannt' : r.costNote.startsWith('Historie') ? 'Bestand ≠ Historie' : r.costNote) : '–'}</span>{/if}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+				<div class="head-row foot">
+					<label class="check small"><input type="checkbox" bind:checked={hideDust} /> Kleinstbeträge unter 1 USDT ausblenden{hidden ? ` (${hidden})` : ''}</label>
+					{#if portfolio.unpriced.length}<span class="small muted">Ohne Kurs: {portfolio.unpriced.join(', ')}</span>{/if}
+				</div>
+			</section>
+		</div>
+	{:else if !data.liveError}
+		<p class="muted">Lade Bestände …</p>
 	{/if}
-{:else if !data.liveError}
-	<p class="muted">Lade Bestände …</p>
-{/if}
+</Zone>
 
 {#if history && histShown.length > 1}
-	<section class="card" style="margin-top:16px">
-		<div class="head-row">
-			<div class="card-title">Wertverlauf</div>
+	<Zone title="Verlauf">
+		{#snippet tools()}
 			<div class="seg" role="group" aria-label="Zeitraum">
 				{#each RANGES as r (r.key)}
 					<button aria-pressed={range === r.key} onclick={() => (range = r.key)}>{r.label}</button>
 				{/each}
 			</div>
+		{/snippet}
+		<div class="grid-half">
+			<section class="card">
+				<div class="card-title">Wertverlauf (EUR)</div>
+				<LineChart
+					labels={histShown.map((p) => (p.live ? 'heute' : dayDe(p.day)))}
+					values={histShown.map((p) => p.valueEur)}
+					values2={histShown.map((p) => p.investedEur)}
+					label="Wert"
+					label2="Netto eingezahlt"
+					fill={false}
+					format={eurFmt}
+					height={340}
+				/>
+			</section>
+			<div class="kpis tiles-2x2">
+				<div class="kpi">
+					<div class="label">{histLast!.live ? 'Wert heute' : `Wert am ${dayDe(histLast!.day)}`}</div>
+					<div class="value">{eurFmt(histLast!.valueEur)}</div>
+					<div class="sub">zu Beginn {eurFmt(histFirst!.valueEur)} ({dayDe(histFirst!.day)})</div>
+				</div>
+				<div class="kpi">
+					<div class="label">Ein-/Auszahlungen · {rangeLabel}</div>
+					<div class="value">{eurFmt(histLast!.investedEur - histFirst!.investedEur)}</div>
+					<div class="sub">netto eingezahlt im Zeitraum</div>
+				</div>
+				<div class="kpi">
+					<div class="label">Ergebnis · {rangeLabel}</div>
+					<div class="value {tone(histResult)}">{histResult! >= 0 ? '+' : ''}{eurFmt(histResult!)}</div>
+					<div class="sub">Wertänderung ohne Ein-/Auszahlungen</div>
+				</div>
+				<div class="kpi">
+					<div class="label">Futures netto · {rangeLabel}</div>
+					<div class="value {tone(futRange?.total.net)}">{money(futRange?.total.net ?? null, 'USDT', { sign: true })}</div>
+					<div class="sub">{futRange?.total.trades ?? 0} Trades · <a href="/futures">zu Futures</a></div>
+				</div>
+			</div>
 		</div>
-		<div class="hist-kpis">
-			<div>
-				<div class="muted small">{histLast!.live ? 'Wert heute (live)' : `Wert am ${dayDe(histLast!.day)}`}</div>
-				<strong>{eurFmt(histLast!.valueEur)}</strong>
-			</div>
-			<div>
-				<div class="muted small">Ein-/Auszahlungen im Zeitraum</div>
-				<strong>{eurFmt(histLast!.investedEur - histFirst!.investedEur)}</strong>
-			</div>
-			<div>
-				<div class="muted small">Ergebnis im Zeitraum</div>
-				<strong class={tone(histResult)}>{histResult! >= 0 ? '+' : ''}{eurFmt(histResult!)}</strong>
-			</div>
-		</div>
-		<LineChart
-			labels={histShown.map((p) => (p.live ? 'heute' : dayDe(p.day)))}
-			values={histShown.map((p) => p.valueEur)}
-			values2={histShown.map((p) => p.investedEur)}
-			label="Wert"
-			label2="Netto eingezahlt"
-			fill={false}
-			format={eurFmt}
-			height={260}
-		/>
-		<p class="small muted">
-			Grün: Wert aller Coins laut Buchungen × Bitget-Tagesschlusskurs (in EUR über den EZB-Kurs). Blau gestrichelt: Netto
-			eingezahlt seit Beginn der Historie (Einzahlungen, Euro-Überweisungen und Anfangsbestände minus Auszahlungen, je zum
-			Tageswert). Ergebnis = Wertänderung ohne Ein-/Auszahlungen. Bis gestern rechnet die Kurve mit den gebuchten Mengen und
-			Tagesschlusskursen; der letzte Punkt „heute“ ist der Live-Gesamtwert wie unter Bestände.
-			{#if histGap}
-				Abstand heute zu gestern: {histGap.total >= 0 ? '+' : ''}{eurFmt(histGap.total)} = Kursänderung seit gestern
-				{histGap.price >= 0 ? '+' : ''}{eurFmt(histGap.price)} · nicht gebuchte Mengen (noch nicht ausgezahlte
-				Staking-Erträge, offene Futures-Positionen, Earn-Zinsen seit dem letzten Abruf)
-				{histGap.qty >= 0 ? '+' : ''}{eurFmt(histGap.qty)}{#if Math.abs(histGap.rest) >= 1}{' · '}Sonstiges {histGap.rest >= 0 ? '+' : ''}{eurFmt(histGap.rest)}{/if}.
-			{/if}
-			{#if history.unpriced.length}
-				Ohne Kurs und daher nicht in der Kurve: {history.unpriced.slice(0, 5).join(', ')}{history.unpriced.length > 5 ? ' …' : '.'}
-			{/if}
-		</p>
-	</section>
+	</Zone>
 {/if}
 
 {#if data.ledger}
-	<section class="card" style="margin-top:16px">
-		<div class="head-row">
-			<div class="card-title">Ein- und Auszahlungen</div>
+	<Zone title="Ein- und Auszahlungen">
+		{#snippet tools()}
 			<div class="seg" role="group" aria-label="Art der Bewegung">
 				{#each FILTERS as f (f.key)}
 					<button aria-pressed={moveFilter === f.key} onclick={() => ((moveFilter = f.key), (moveLimit = 15))}>{f.label}</button>
 				{/each}
 			</div>
-		</div>
+		{/snippet}
+		<section class="card">
 		{#if (moveFilter === 'external' || moveFilter === 'all') && !eurIn.isZero()}
 			<p class="small">
 				Euro vom Bankkonto eingezahlt: <strong>{money(eurIn, 'EUR')}</strong>{#if !eurOut.isZero()} · ausgezahlt: <strong>{money(eurOut, 'EUR')}</strong>{/if}
@@ -495,21 +411,46 @@
 		{:else}
 			<p class="muted small">Keine Bewegungen in dieser Auswahl.</p>
 		{/if}
-		<p class="small muted">
-			Aus den Kontobuchungen (CoinTracking-Import und täglicher Bitget-Abruf); Netzwerk, Adresse und Status aus Bitgets
-			Ein-/Auszahlungsdaten (rund ein Jahr zurück). Euro-Einzahlungen bucht Bitget direkt als Kauf von USDT/USDC; gezeigt wird der gekaufte Betrag mit dem Euro-Betrag darunter. Umbuchungen zwischen Bitget-Konten sind zu einer Zeile zusammengefasst; „?“
-			heißt, die Gegenbuchung ist nicht bekannt. Bitget kennt nur die Adresse, nicht die absendende Börse.
-		</p>
-	</section>
+		</section>
+	</Zone>
 {/if}
+
+<HelpBox>
+	<ul>
+		<li><strong>Aktueller Stand</strong>: Bestände, Kurse und Positionen fragt das Cockpit bei jedem Seitenaufruf und bei „Aktualisieren“ direkt bei {brokerLabel(broker)} ab. Euro über den letzten EZB-Kurs.</li>
+		<li><strong>Einstand</strong> nach FIFO aus der Buchungshistorie – nur angezeigt, wenn die Historie den Bestand vollständig erklärt. <strong>Unrealisiert</strong> = aktueller Wert minus Einstand.</li>
+		<li><strong>Wertverlauf</strong>: grün der Wert aller Coins laut Buchungen × Bitget-Tagesschlusskurs (in EUR über den EZB-Kurs), blau gestrichelt netto eingezahlt seit Beginn der Historie (Einzahlungen, Euro-Überweisungen und Anfangsbestände minus Auszahlungen, je zum Tageswert). Bis gestern rechnet die Kurve mit gebuchten Mengen; der letzte Punkt „heute“ ist der aktuelle Gesamtwert.
+			{#if histGap}
+				Abstand heute zu gestern: {histGap.total >= 0 ? '+' : ''}{eurFmt(histGap.total)} = Kursänderung {histGap.price >= 0 ? '+' : ''}{eurFmt(histGap.price)} · nicht gebuchte Mengen (Staking-Erträge, offene Positionen, Earn-Zinsen seit dem letzten Abruf) {histGap.qty >= 0 ? '+' : ''}{eurFmt(histGap.qty)}{#if Math.abs(histGap.rest) >= 1}{' · '}Sonstiges {histGap.rest >= 0 ? '+' : ''}{eurFmt(histGap.rest)}{/if}.
+			{/if}
+			{#if history?.unpriced.length}Ohne Kurs und daher nicht in der Kurve: {history.unpriced.slice(0, 5).join(', ')}{history.unpriced.length > 5 ? ' …' : '.'}{/if}
+		</li>
+		<li><strong>Ein- und Auszahlungen</strong> aus den Kontobuchungen; Netzwerk, Adresse und Status aus Bitgets Ein-/Auszahlungsdaten (rund ein Jahr zurück). Euro-Einzahlungen bucht Bitget direkt als Kauf von USDT/USDC. Umbuchungen zwischen Bitget-Konten sind zu einer Zeile zusammengefasst; „?“ heißt, die Gegenbuchung ist nicht bekannt.</li>
+		<li>Den <strong>Abgleich mit den Kontosummen</strong> der Börsen findest du unter <a href="/korrekturen">Korrekturen</a>.</li>
+	</ul>
+</HelpBox>
 
 <style>
 	.head-row {
 		display: flex;
 		justify-content: space-between;
-		align-items: baseline;
+		align-items: center;
 		gap: 12px;
 		flex-wrap: wrap;
+	}
+	.foot {
+		margin-top: 10px;
+	}
+	.split {
+		display: grid;
+		gap: 2px;
+		margin-top: 4px;
+	}
+	.split div {
+		display: flex;
+		justify-content: space-between;
+		gap: 8px;
+		font-variant-numeric: tabular-nums;
 	}
 	.check {
 		display: flex;
@@ -542,12 +483,6 @@
 	}
 	.sync-error {
 		color: var(--loss);
-	}
-	.hist-kpis {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 12px 32px;
-		margin: 4px 0 12px;
 	}
 	.head-row .seg {
 		flex-wrap: wrap;

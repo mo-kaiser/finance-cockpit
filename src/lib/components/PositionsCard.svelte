@@ -27,6 +27,14 @@
 	<div class="card slim"><span class="error small">Positionen nicht abrufbar: {error ?? sectionError}</span></div>
 {:else if !live}
 	<div class="card slim"><span class="muted small">Lade Positionen …</span></div>
+{:else if !positions.length && variant === 'list'}
+	<div class="card">
+		<div class="list-head">
+			<div class="card-title">Offene Positionen</div>
+			{#if href}<a class="small" {href}>Futures →</a>{/if}
+		</div>
+		<p class="muted small">Keine offenen Futures-Positionen.</p>
+	</div>
 {:else if !positions.length}
 	<div class="card slim">
 		<span><strong>Offene Futures-Positionen:</strong> <span class="muted">keine</span></span>

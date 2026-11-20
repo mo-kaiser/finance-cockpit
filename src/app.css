@@ -342,6 +342,13 @@ th.num {
 	color: var(--accent);
 }
 
+/* Kacheln 2 × 2 neben einer Grafik oder Tabelle (gleiche Höhe) */
+.tiles-2x2 {
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	grid-auto-rows: 1fr;
+	margin: 0;
+}
+
 /* Grafik halbe Breite, daneben eine passende Tabelle */
 .grid-half {
 	display: grid;

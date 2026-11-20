@@ -10,3 +10,4 @@ node_modules
 # Finanzdaten gehören nie ins Repo
 *.csv
 *.xlsx
+dev.log

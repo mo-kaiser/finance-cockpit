@@ -5,6 +5,7 @@
 	import { clearLedgerCache, berlinDay } from '#lib/data/ledger.ts';
 	import { money, qty } from '#lib/format.ts';
 	import { asset, USD_STABLE } from '#lib/tax/assets.ts';
+	import { buildPortfolio, type Account } from '#lib/analysis/portfolio.ts';
 	import { computeTax } from '#lib/tax/engine.ts';
 	import { FxTable } from '#lib/tax/fx.ts';
 	import { PriceTable } from '#lib/tax/prices.ts';
@@ -200,10 +201,53 @@
 		await invalidate('app:korrekturen');
 	}
 
+	// Kontosummen: was die Börse je Kontoart meldet vs. was das Cockpit aus den Einzelbeständen errechnet.
+	// Eine Differenz heißt: Es liegt Geld in einem Bereich, den das Cockpit nicht ausliest.
+	const ACCOUNT_LABEL: Record<string, string> = {
+		spot: 'Spot',
+		futures: 'Futures',
+		earn: 'Earn',
+		funding: 'Funding',
+		bots: 'Bots',
+		margin: 'Margin',
+		crossed_margin: 'Cross Margin',
+		isolated_margin: 'Isolated Margin',
+		isolated: 'Isolated Margin',
+		copy_trading: 'Copy-Trading',
+		otc: 'OTC',
+		p2p: 'P2P',
+		contract: 'Futures'
+	};
+	const ACCOUNT_NOTE: Record<V, Record<string, string>> = {
+		bitget: {},
+		kucoin: { spot: 'Main + Trading' }
+	};
+	const accountSums = $derived.by(() => {
+		if (!liveV?.accounts.ok) return null;
+		const ours = (acc: Account) => buildPortfolio(liveV!, null, [], new Set([acc])).totalUsdt;
+		const known: Record<string, Decimal> = { spot: ours('spot'), futures: ours('futures'), earn: ours('earn') };
+		return liveV.accounts.data
+			.map((a) => {
+				const exch = new Decimal(a.usdtBalance || 0);
+				const cockpit = known[a.accountType] ?? null;
+				return { type: a.accountType, label: ACCOUNT_LABEL[a.accountType] ?? a.accountType, exch, cockpit, diff: exch.sub(cockpit ?? 0) };
+			})
+			.filter((r) => r.exch.gte(1) || (r.cockpit && r.cockpit.gte(1)));
+	});
+
 	const dateDe = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('de-DE');
 </script>
 
-<h1>Korrekturen</h1>
+<div class="page-head">
+	<h1>Korrekturen</h1>
+	{#if venues.length > 1}
+		<div class="toolbar">
+			<div class="seg" role="group" aria-label="Börse">
+				{#each venues as v (v)}<button aria-pressed={view === v} onclick={() => (view = v)}>{VNAME[v]}</button>{/each}
+			</div>
+		</div>
+	{/if}
+</div>
 <p class="muted">
 	Nachträge für das, was in den Buchungen fehlt. Zuerst der <strong>Anfangsbestand</strong>: Coins, die du schon vor Beginn
 	der Historie ({dateDe(historyStart)}) bei einer Börse hattest. Sie fließen in Dashboard und Steuer ein wie ein Kauf.
@@ -214,11 +258,6 @@
 <section class="card">
 	<div class="head-row">
 		<div class="card-title">Abgleich: {VNAME[view]} gegen Buchungen</div>
-		{#if venues.length > 1}
-			<div class="seg" role="group" aria-label="Börse">
-				{#each venues as v (v)}<button aria-pressed={view === v} onclick={() => (view = v)}>{VNAME[v]}</button>{/each}
-			</div>
-		{/if}
 	</div>
 	{#if view === 'bitget' && data.liveError}
 		<p class="error small">Bitget-Bestände nicht geladen: {data.liveError}</p>
@@ -261,6 +300,44 @@
 			unter 1 USDT sind ausgeblendet.
 		</p>
 	{/if}
+</section>
+
+<section class="card" style="margin-top:16px">
+	<div class="card-title">Kontosummen: {VNAME[view]} gegen Cockpit</div>
+	{#if !liveV}
+		<p class="muted small">Lade …</p>
+	{:else if !liveV.accounts.ok}
+		<p class="error small">Kontosummen nicht abrufbar: {liveV.accounts.error}</p>
+	{:else if accountSums && accountSums.length}
+		<div class="table-wrap">
+			<table>
+				<thead><tr><th>Kontoart</th><th class="num">laut {VNAME[view]} (USDT)</th><th class="num">im Cockpit (USDT)</th><th class="num">Differenz</th></tr></thead>
+				<tbody>
+					{#each accountSums as r (r.type)}
+						{@const off = r.diff.abs().gt(Decimal.max(1, r.exch.abs().mul('0.01')))}
+						<tr>
+							<td>{r.label} <span class="muted small">({ACCOUNT_NOTE[view][r.type] ?? r.type})</span></td>
+							<td class="num">{qty(r.exch, 2)}</td>
+							<td class="num">{r.cockpit ? qty(r.cockpit, 2) : '–'}</td>
+							<td class="num {off ? 'loss' : 'muted'}">{off ? qty(r.diff, 2) : 'passt'}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+	{:else}
+		<p class="muted small">Keine Kontosummen gemeldet.</p>
+	{/if}
+	<p class="small muted">
+		{#if view === 'kucoin'}
+			KuCoin meldet je Konto und Coin einen Bestand; das Cockpit rechnet ihn mit den aktuellen KuCoin-Kursen in USDT um.
+			Ausgewertet werden Main- und Trading-Konto (als „Spot“) sowie Earn (eigene Abfrage, hier nicht aufgeführt). Jede weitere
+			Kontoart in der Liste (z. B. Margin) liest das Cockpit nicht aus.
+		{:else}
+			Bitget liefert je Kontoart einen Gesamtwert. Eine Differenz zeigt, dass ein Teil des Vermögens in einem Bereich liegt,
+			dessen Einzelbestände das Cockpit nicht abfragt.
+		{/if}
+	</p>
 </section>
 
 {#if shortfalls.length || showOldShortfalls}

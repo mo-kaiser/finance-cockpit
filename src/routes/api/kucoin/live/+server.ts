@@ -43,15 +43,40 @@ export const GET: RequestHandler = async ({ locals }) => {
 	if (claims?.aal !== 'aal2') error(401, 'Nicht angemeldet');
 	if (!kucoinConfigured()) return json({ configured: false });
 
-	const [spot, holds, tickers] = await Promise.all([
-		safe(async () =>
-			(await kucoinGet<Raw[]>('/api/v1/accounts'))
-				.filter((a) => ['main', 'trade', 'trade_hf'].includes(str(a.type)) && Number(a.balance) > 0)
-				.map((a) => ({ coin: str(a.currency), available: str(a.available), frozen: str(a.holds), locked: '0' }))
-		),
+	const [rawAccounts, holds, tickers] = await Promise.all([
+		safe(async () => (await kucoinGet<Raw[]>('/api/v1/accounts')).filter((a) => Number(a.balance) > 0)),
 		safe(async () => (await kucoinPaged<Raw>('/api/v1/earn/hold-assets', {}, 500, 5)).filter((h) => Number(h.holdAmount) > 0)),
 		safe(prices)
 	]);
+	const SPOT_TYPES = ['main', 'trade', 'trade_hf'];
+	const spot = rawAccounts.ok
+		? {
+				ok: true as const,
+				data: rawAccounts.data
+					.filter((a) => SPOT_TYPES.includes(str(a.type)))
+					.map((a) => ({ coin: str(a.currency), available: str(a.available), frozen: str(a.holds), locked: '0' }))
+			}
+		: rawAccounts;
+	// Kontosummen je Kontoart in USDT (für den Abgleich auf der Korrekturen-Seite): Main/Trading = „spot“,
+	// alle anderen Kontoarten (z. B. margin, isolated) einzeln – die wertet das Cockpit nicht aus.
+	const accounts =
+		rawAccounts.ok && tickers.ok
+			? {
+					ok: true as const,
+					data: [
+						...rawAccounts.data
+							.reduce((m, a) => {
+								const type = SPOT_TYPES.includes(str(a.type)) ? 'spot' : str(a.type);
+								const px = tickers.data[str(a.currency)];
+								const v = px ? new Decimal(str(a.balance)).mul(px) : new Decimal(0);
+								return m.set(type, (m.get(type) ?? new Decimal(0)).add(v));
+							}, new Map<string, Decimal>())
+							.entries()
+					].map(([accountType, v]) => ({ accountType, usdtBalance: v.toFixed(2) }))
+				}
+			: rawAccounts.ok
+				? (tickers as { ok: false; error: string })
+				: rawAccounts;
 
 	// Earn-Positionen: returnRate ist ein Anteil (0,0347 = 3,47 % p. a.); DEMAND = flexibel, sonst mit Laufzeit
 	const item = (h: Raw) => ({
@@ -80,7 +105,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 		elite: { ok: true, data: [] },
 		futures: { ok: true, data: [] },
 		positions: { ok: true, data: [] },
-		accounts: { ok: true, data: [] },
+		accounts,
 		tickers
 	});
 };

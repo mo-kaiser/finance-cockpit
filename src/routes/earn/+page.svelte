@@ -7,6 +7,9 @@
 	import { FxTable } from '#lib/tax/fx.ts';
 
 	import BrokerSelect from '#lib/components/BrokerSelect.svelte';
+	import RefreshButton from '#lib/components/RefreshButton.svelte';
+	import HelpBox from '#lib/components/HelpBox.svelte';
+	import Zone from '#lib/components/Zone.svelte';
 	import { brokerHas, brokerState, ledgerFor, liveFor } from '#lib/broker.svelte.ts';
 	import { earnPositions } from '#lib/analysis/earn-positions.ts';
 	import { onChainNet } from '#lib/analysis/reconcile.ts';
@@ -89,21 +92,28 @@
 	const positionsTotal = $derived(positions.reduce((s, p) => s.add(p.valueUsdt ?? 0), new Decimal(0)));
 	const dateDe = (d: string | null) => (d ? new Date(`${d}T12:00:00Z`).toLocaleDateString('de-DE') : '');
 	const VNAME = { bitget: 'Bitget', kucoin: 'KuCoin' } as const;
+
+	// Ø Zins laut Börse, gewichtet mit dem Wert der Positionen
+	const avgApy = $derived.by(() => {
+		let w = new Decimal(0);
+		let sum = new Decimal(0);
+		for (const p of positions) if (p.apy !== null && p.valueUsdt) (w = w.add(p.valueUsdt)), (sum = sum.add(p.valueUsdt.mul(p.apy)));
+		return w.isZero() ? null : sum.div(w).toNumber();
+	});
+	const nextEnd = $derived(positions.filter((p) => p.end && p.end >= today).sort((a, b) => a.end!.localeCompare(b.end!))[0] ?? null);
+	const periodLabel = $derived(period === '30' ? '30 Tage' : period === 'gesamt' ? 'gesamt' : period);
+	const topCoin = $derived([...s.byCoin].filter((c) => c.valueUsdt).sort((a, b) => b.valueUsdt!.cmp(a.valueUsdt!))[0] ?? null);
 </script>
 
 <div class="page-head">
 	<h1>Earn</h1>
 	<div class="toolbar">
 		<BrokerSelect show={hasKucoin} />
-		<div class="seg" role="group" aria-label="Zeitraum">
-			<button aria-pressed={period === '30'} onclick={() => (period = '30')}>30 Tage</button>
-			{#each years as y (y)}<button aria-pressed={period === y} onclick={() => (period = y)}>{y}</button>{/each}
-			<button aria-pressed={period === 'gesamt'} onclick={() => (period = 'gesamt')}>Gesamt</button>
-		</div>
 		<div class="seg" role="group" aria-label="Währung">
 			<button aria-pressed={cur === 'EUR'} onclick={() => (cur = 'EUR')}>EUR</button>
 			<button aria-pressed={cur === 'USDT'} onclick={() => (cur = 'USDT')}>USDT</button>
 		</div>
+		<RefreshButton />
 	</div>
 </div>
 
@@ -111,153 +121,177 @@
 {#if broker !== 'KuCoin' && data.liveError}<p class="error small">Bitget nicht erreichbar: {data.liveError}</p>{/if}
 {#if broker !== 'Bitget' && data.kucoinError}<p class="error small">KuCoin nicht erreichbar: {data.kucoinError}</p>{/if}
 
-<div class="kpis">
-	<div class="kpi">
-		<div class="label">Erträge im Zeitraum</div>
-		<div class="value gain">{fmt(s.totalUsdt, true)}</div>
-		<div class="sub">{s.bookings.toLocaleString('de-DE')} Gutschriften · zum heutigen Kurs</div>
-	</div>
-	<div class="kpi">
-		<div class="label">Ø pro Tag</div>
-		<div class="value">{fmt(perDay)}</div>
-		<div class="sub">≈ {fmt(perDay.mul(30))} im Monat</div>
-	</div>
-	<div class="kpi">
-		<div class="label">Earn-Bestand jetzt</div>
-		<div class="value">{fmt(holdings?.totalUsdt ?? null)}</div>
-		<div class="sub">{holdings?.rows.length ?? 0} Positionen</div>
-	</div>
-	<div class="kpi">
-		<div class="label">Rendite der letzten 30 Tage</div>
-		<div class="value">{pct(realized30Total)}</div>
-		<div class="sub">p. a., Erträge ÷ heutiger Bestand</div>
-	</div>
-</div>
-
-<section class="card" style="margin-top:16px">
-	<div class="card-title">Aktuelle Earn- und Staking-Positionen</div>
-	{#if !live}
-		<p class="muted small">Keine Live-Daten.</p>
-	{:else if !positions.length}
-		<p class="muted small">Derzeit nichts im Earn oder Staking.</p>
-	{:else}
-		<div class="table-wrap">
-			<table>
-				<thead>
-					<tr>
-						{#if broker === 'Alle'}<th>Börse</th>{/if}
-						<th>Coin</th>
-						<th>Produkt</th>
-						<th class="num">Menge</th>
-						<th class="num">Wert</th>
-						<th class="num">Zins p. a.</th>
-						<th class="num">Ertrag bisher</th>
-						<th>seit</th>
-						<th>bis</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each positions as p, i (i)}
-						<tr>
-							{#if broker === 'Alle'}<td class="small">{VNAME[p.venue]}</td>{/if}
-							<td><strong>{p.coin}</strong></td>
-							<td class="small">{p.product}{#if p.note}<br /><span class="muted">{p.note}</span>{/if}</td>
-							<td class="num">{qty(p.qty, 6)}</td>
-							<td class="num">{fmt(p.valueUsdt)}</td>
-							<td class="num">{p.apy !== null ? `${p.apy.toLocaleString('de-DE', { maximumFractionDigits: 2 })} %` : ''}</td>
-							<td class="num gain">{p.profit && !p.profit.isZero() ? `${qty(p.profit, 6)} ${p.coin}` : ''}</td>
-							<td class="small">{dateDe(p.start)}</td>
-							<td class="small">{dateDe(p.end)}</td>
-						</tr>
-					{/each}
-				</tbody>
-				<tfoot>
-					<tr>
-						<td colspan={broker === 'Alle' ? 4 : 3}><strong>Summe</strong></td>
-						<td class="num"><strong>{fmt(positionsTotal)}</strong></td>
-						<td colspan="4"></td>
-					</tr>
-				</tfoot>
-			</table>
+<Zone title="Aktueller Stand" now at={live?.at ?? null}>
+	<div class="grid-half">
+		<section class="card">
+			<div class="card-title">Earn- und Staking-Positionen · {cur === 'EUR' ? '€' : 'USDT'}</div>
+			{#if !live}
+				<p class="muted small">Lade Positionen …</p>
+			{:else if !positions.length}
+				<p class="muted small">Derzeit nichts im Earn oder Staking.</p>
+			{:else}
+				<div class="table-wrap scroll-340">
+					<table>
+						<thead>
+							<tr>
+								<th>Coin</th>
+								<th>Produkt</th>
+								<th class="num">Menge</th>
+								<th class="num">Wert</th>
+								<th class="num">Zins p. a.</th>
+								<th>bis</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each positions as p, i (i)}
+								<tr>
+									<td><strong>{p.coin}</strong>{#if broker === 'Alle'}<div class="note">{VNAME[p.venue]}</div>{/if}</td>
+									<td class="small" title={p.note ?? ''}>{p.product}{#if p.profit && !p.profit.isZero()}<div class="note">Ertrag bisher {qty(p.profit, 6)}</div>{/if}</td>
+									<td class="num">{qty(p.qty, 6)}</td>
+									<td class="num">{fmt(p.valueUsdt)}</td>
+									<td class="num">{p.apy !== null ? `${p.apy.toLocaleString('de-DE', { maximumFractionDigits: 2 })} %` : ''}</td>
+									<td class="small">{p.end ? dateDe(p.end) : /flex/i.test(p.product) ? 'flexibel' : '–'}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+		</section>
+		<div class="kpis tiles-2x2">
+			<div class="kpi">
+				<div class="label">Earn-Bestand</div>
+				<div class="value">{fmt(positionsTotal)}</div>
+				<div class="sub">{positions.length} {positions.length === 1 ? 'Position' : 'Positionen'}</div>
+			</div>
+			<div class="kpi">
+				<div class="label">Rendite der letzten 30 Tage</div>
+				<div class="value">{pct(realized30Total)}</div>
+				<div class="sub">p. a., Erträge ÷ heutiger Bestand</div>
+			</div>
+			<div class="kpi">
+				<div class="label">Ø Zins laut Börse</div>
+				<div class="value">{avgApy !== null ? `${avgApy.toLocaleString('de-DE', { maximumFractionDigits: 2 })} %` : '–'}</div>
+				<div class="sub">p. a., nach Wert gewichtet</div>
+			</div>
+			<div class="kpi">
+				<div class="label">Nächstes Laufzeitende</div>
+				<div class="value">{nextEnd ? dateDe(nextEnd.end) : '–'}</div>
+				<div class="sub">{nextEnd ? `${nextEnd.coin} · ${nextEnd.product}` : 'kein Enddatum bekannt'}</div>
+			</div>
 		</div>
-		<p class="small muted">
-			Live von {broker === 'Alle' ? 'Bitget und KuCoin' : broker}, bewertet zum aktuellen Kurs. Zinssatz, Laufzeit und bisheriger Ertrag, soweit die Börse sie liefert;
-			bei festen Bitget-Produkten ist das Enddatum aus Laufzeit und Haltedauer berechnet. Positionen unter 0,50 USDT ausgeblendet.
-		</p>
-	{/if}
-</section>
-
-{#if s.byMonth.length > 1}
-	<section class="card" style="margin-top:16px">
-		<div class="card-title">Erträge je Monat (zum heutigen Kurs)</div>
-		<BarChart labels={s.byMonth.map((m) => monthLabel(m.month))} values={s.byMonth.map((m) => conv(m.valueUsdt)?.toNumber() ?? 0)} format={fmtAxis} />
-	</section>
-{/if}
-
-<section class="card" style="margin-top:16px">
-	<div class="card-title">Coins</div>
-	<div class="table-wrap">
-		<table>
-			<thead>
-				<tr>
-					<th>Coin</th>
-					<th class="num">Erträge (Menge)</th>
-					<th class="num">Wert heute</th>
-					<th class="num">Anteil</th>
-					<th class="num">Gutschriften</th>
-					<th class="num">Earn-Bestand</th>
-					<th class="num">Rendite 30 T. p. a.</th>
-					<th class="num">APY laut Börse</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each coins as coin (coin)}
-					{@const c = s.byCoin.find((x) => x.coin === coin)}
-					{@const h = holdingByCoin.get(coin)}
-					{@const l30 = last30ByCoin.get(coin)}
-					{@const apr = h && l30 ? realizedApr(l30.qty, h.qty, 30) : null}
-					{@const apy = apyByCoin.get(coin)}
-					<tr>
-						<td><strong>{coin}</strong></td>
-						<td class="num">{c ? qty(c.qty, 6) : '–'}</td>
-						<td class="num gain">{c ? fmt(c.valueUsdt) : '–'}</td>
-						<td class="num muted">{c?.valueUsdt && !s.totalUsdt.isZero() ? pct(c.valueUsdt.div(s.totalUsdt).toNumber()) : ''}</td>
-						<td class="num muted">{c ? c.bookings.toLocaleString('de-DE') : ''}</td>
-						<td class="num">{h ? qty(h.qty, 6) : ''}</td>
-						<td class="num">{pct(apr, 2)}</td>
-						<td class="num muted">{apy ? `${Number(apy).toLocaleString('de-DE', { maximumFractionDigits: 2 })} %` : ''}</td>
-					</tr>
-				{:else}
-					<tr><td colspan="8" class="muted">Keine Erträge im Zeitraum.</td></tr>
-				{/each}
-			</tbody>
-		</table>
 	</div>
-	{#if s.unpricedCoins.length}<p class="small muted">Ohne aktuellen Kurs (nicht im Wert enthalten): {s.unpricedCoins.join(', ')}</p>{/if}
-</section>
+</Zone>
 
-<div class="grid-2" style="margin-top:16px">
-	<section class="card">
-		<div class="card-title">Nach Art</div>
-		<table>
-			<tbody>
+<Zone title="Erträge">
+	{#snippet tools()}
+		<div class="seg" role="group" aria-label="Zeitraum">
+			<button aria-pressed={period === '30'} onclick={() => (period = '30')}>30 Tage</button>
+			{#each years as y (y)}<button aria-pressed={period === y} onclick={() => (period = y)}>{y}</button>{/each}
+			<button aria-pressed={period === 'gesamt'} onclick={() => (period = 'gesamt')}>Gesamt</button>
+		</div>
+	{/snippet}
+	<div class="kpis">
+		<div class="kpi">
+			<div class="label">Erträge · {periodLabel}</div>
+			<div class="value gain">{fmt(s.totalUsdt, true)}</div>
+			<div class="sub">{s.bookings.toLocaleString('de-DE')} Gutschriften · zum heutigen Kurs</div>
+		</div>
+		<div class="kpi">
+			<div class="label">Ø pro Tag</div>
+			<div class="value">{fmt(perDay)}</div>
+			<div class="sub">≈ {fmt(perDay.mul(30))} im Monat</div>
+		</div>
+		<div class="kpi">
+			<div class="label">Nach Art</div>
+			<div class="mini">
 				{#each KINDS as k (k)}
-					<tr>
-						<td>{EARN_KIND_LABEL[k]}</td>
-						<td class="num">{fmt(s.byKind[k])}</td>
-						<td class="num muted">{!s.totalUsdt.isZero() ? pct(s.byKind[k].div(s.totalUsdt).toNumber(), 0) : ''}</td>
-					</tr>
+					<div class="mini-row"><span>{EARN_KIND_LABEL[k]}</span><span>{fmt(s.byKind[k])}</span></div>
 				{/each}
-			</tbody>
-		</table>
-	</section>
+			</div>
+		</div>
+		<div class="kpi">
+			<div class="label">Größter Ertrag</div>
+			<div class="value">{topCoin?.coin ?? '–'}</div>
+			<div class="sub">{topCoin ? `${fmt(topCoin.valueUsdt)} · ${pct(s.totalUsdt.isZero() ? null : topCoin.valueUsdt!.div(s.totalUsdt).toNumber(), 0)} der Erträge` : ''}</div>
+		</div>
+	</div>
 
-	<section class="card">
-		<div class="card-title">So sind die Zahlen zu lesen</div>
-		<ul class="small muted">
-			<li>Erträge sind alle Earn-Gutschriften (Zinsen, Staking, Airdrops, Boni) aus CoinTracking und dem täglichen Abruf von Bitget und KuCoin.</li>
-			<li>Bewertet wird mit dem <strong>heutigen</strong> Kurs. Der Wert am Tag des Zuflusses – maßgeblich für die Steuer – folgt mit den Tageskursen.</li>
-			<li>Die Rendite der letzten 30 Tage teilt die Erträge durch den heutigen Bestand; wurde im Zeitraum viel ein- oder ausgezahlt, ist sie nur eine Näherung.</li>
-		</ul>
-	</section>
-</div>
+	<div class="grid-half block">
+		<section class="card">
+			<div class="card-title">Erträge je Monat · {cur === 'EUR' ? '€' : 'USDT'}, zum heutigen Kurs</div>
+			{#if s.byMonth.length > 1}
+				<BarChart labels={s.byMonth.map((m) => monthLabel(m.month))} values={s.byMonth.map((m) => conv(m.valueUsdt)?.toNumber() ?? 0)} format={fmtAxis} height={340} />
+			{:else}
+				<p class="muted small">Für einen Verlauf je Monat einen längeren Zeitraum wählen.</p>
+			{/if}
+		</section>
+		<section class="card">
+			<div class="card-title">Coins · {cur === 'EUR' ? '€' : 'USDT'}</div>
+			<div class="table-wrap scroll-340">
+				<table>
+					<thead>
+						<tr>
+							<th>Coin</th>
+							<th class="num">Erträge (Menge)</th>
+							<th class="num">Wert heute</th>
+							<th class="num">Anteil</th>
+							<th class="num">Rendite 30 T.</th>
+							<th class="num">APY Börse</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each coins as coin (coin)}
+							{@const c = s.byCoin.find((x) => x.coin === coin)}
+							{@const h = holdingByCoin.get(coin)}
+							{@const l30 = last30ByCoin.get(coin)}
+							{@const apr = h && l30 ? realizedApr(l30.qty, h.qty, 30) : null}
+							{@const apy = apyByCoin.get(coin)}
+							<tr>
+								<td><strong>{coin}</strong></td>
+								<td class="num">{c ? qty(c.qty, 6) : '–'}</td>
+								<td class="num gain">{c ? fmt(c.valueUsdt) : '–'}</td>
+								<td class="num muted">{c?.valueUsdt && !s.totalUsdt.isZero() ? pct(c.valueUsdt.div(s.totalUsdt).toNumber()) : ''}</td>
+								<td class="num">{pct(apr, 2)}</td>
+								<td class="num muted">{apy ? `${Number(apy).toLocaleString('de-DE', { maximumFractionDigits: 2 })} %` : ''}</td>
+							</tr>
+						{:else}
+							<tr><td colspan="6" class="muted">Keine Erträge im Zeitraum.</td></tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+			{#if s.unpricedCoins.length}<p class="small muted">Ohne aktuellen Kurs (nicht im Wert enthalten): {s.unpricedCoins.join(', ')}</p>{/if}
+		</section>
+	</div>
+</Zone>
+
+<HelpBox>
+	<ul>
+		<li><strong>Aktueller Stand</strong>: Positionen fragt das Cockpit bei jedem Seitenaufruf direkt bei {broker === 'Alle' ? 'Bitget und KuCoin' : broker} ab, bewertet zum aktuellen Kurs. Zinssatz, Laufzeit und bisheriger Ertrag, soweit die Börse sie liefert; bei festen Bitget-Produkten ist das Enddatum aus Laufzeit und Haltedauer berechnet. Positionen unter 0,50 USDT ausgeblendet.</li>
+		<li><strong>Erträge</strong> sind alle Earn-Gutschriften (Zinsen, Staking, Airdrops, Boni) aus CoinTracking und dem täglichen Abruf von Bitget und KuCoin, bewertet mit dem <strong>heutigen</strong> Kurs. Der Wert am Tag des Zuflusses – maßgeblich für die Steuer (§ 22 Nr. 3 EStG) – steht auf der Steuer-Seite.</li>
+		<li>Die <strong>Rendite der letzten 30 Tage</strong> teilt die Erträge durch den heutigen Bestand; wurde im Zeitraum viel ein- oder ausgezahlt, ist sie nur eine Näherung.</li>
+	</ul>
+</HelpBox>
+
+<style>
+	.scroll-340 {
+		max-height: 340px;
+		overflow-y: auto;
+	}
+	.note {
+		font-size: 0.8rem;
+		color: var(--muted);
+	}
+	.mini {
+		display: grid;
+		gap: 2px;
+		margin-top: 4px;
+	}
+	.mini-row {
+		display: flex;
+		justify-content: space-between;
+		gap: 8px;
+		font-variant-numeric: tabular-nums;
+	}
+</style>
