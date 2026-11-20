@@ -90,7 +90,11 @@
 	const mw = $derived(maxAbs(stats.byWeekday));
 	const mh = $derived(maxAbs(stats.byHour));
 
-	// ---------- Live-Positionen (Bitget), unabhängig vom Zeitraum ----------
+	// ---------- Kalender: Monate des angezeigten Jahres ----------
+	const calYear = $derived(month.slice(0, 4));
+	const calYearStats = $derived(futuresStats(inRange(events, `${calYear}-01-01`, `${calYear}-12-31`), cur));
+
+	// ---------- Aktueller Stand (Bitget), unabhängig vom Zeitraum ----------
 	let live = $state<LiveData | null>(null);
 	let liveError = $state<string | null>(null);
 	$effect(() => {
@@ -105,6 +109,10 @@
 			alive = false;
 		};
 	});
+	const futAcc = $derived(live?.futures.ok ? live.futures.data : []);
+	const futEquity = $derived(futAcc.reduce((s, a) => s.add(a.usdtEquity || a.accountEquity || 0), new Decimal(0)));
+	const futAvailable = $derived(futAcc.reduce((s, a) => s.add(a.available || 0), new Decimal(0)));
+	const futUnrealized = $derived(futAcc.reduce((s, a) => s.add(a.unrealizedPL || 0), new Decimal(0)));
 </script>
 
 <div class="page-head">
@@ -122,7 +130,53 @@
 {#if data.loadError}<p class="error">{data.loadError}</p>{/if}
 {#if broker === 'KuCoin' && !events.length}<p class="muted">Bei KuCoin gibt es keine Futures-Buchungen. Futures handelst du bisher nur bei Bitget.</p>{/if}
 
-<Zone title="Jetzt" now at={live?.at ?? null}>
+{#snippet longShort()}
+<section class="card">
+	<div class="card-title">Long vs. Short</div>
+	<table>
+		<thead><tr><th>Richtung</th><th class="num">Trades</th><th class="num">Anteil</th><th class="num">Treffer</th><th class="num">Ergebnis brutto</th></tr></thead>
+		<tbody>
+			{#each ['long', 'short'] as const as d (d)}
+				{@const x = stats.byDir[d]}
+				<tr>
+					<td>{d === 'long' ? 'Long' : 'Short'}</td>
+					<td class="num">{x.trades}</td>
+					<td class="num">{pct(stats.total.trades ? x.trades / stats.total.trades : null, 0)}</td>
+					<td class="num">{pct(x.trades ? x.wins / x.trades : null, 0)}</td>
+					<td class="num {tone(x.pnl)}">{fmt(x.pnl, true)}</td>
+				</tr>
+			{/each}
+		</tbody>
+	</table>
+</section>
+{/snippet}
+
+{#snippet monthTable(st: typeof stats, title: string, current: string | null)}
+	<section class="card">
+		<div class="card-title">{title}</div>
+		<div class="table-wrap month-scroll">
+			<table>
+				<thead><tr><th>Monat</th><th class="num">Trades</th><th class="num">Brutto</th><th class="num">Gebühren</th><th class="num">Funding</th><th class="num">Netto</th></tr></thead>
+				<tbody>
+					{#each [...st.byMonth.entries()].reverse() as [m, b] (m)}
+						<tr class:current={m === current}>
+							<td><a href={`/futures?view=kalender&m=${m}&cur=${cur}`}>{MONTHS[Number(m.slice(5)) - 1]} {m.slice(0, 4)}</a></td>
+							<td class="num">{b.trades}</td>
+							<td class="num {tone(b.pnl)}">{fmt(b.pnl)}</td>
+							<td class="num">{fmt(b.fees)}</td>
+							<td class="num">{fmt(b.funding)}</td>
+							<td class="num {tone(b.net)}">{fmt(b.net, true)}</td>
+						</tr>
+					{:else}
+						<tr><td colspan="6" class="muted">Keine Futures-Buchungen.</td></tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+	</section>
+{/snippet}
+
+<Zone title="Aktueller Stand" now at={live?.at ?? null}>
 	<PositionsCard {live} error={liveError} />
 </Zone>
 
@@ -158,7 +212,7 @@
 				<button class="ghost" onclick={() => shiftMonth(1)} aria-label="Folgemonat">›</button>
 				<button class="ghost small" onclick={() => setParam('m', lastDay.slice(0, 7))}>Letzter Handelsmonat</button>
 			</div>
-			<div class="cal">
+			<div class="cal" style="grid-template-rows: auto repeat({weeks.length}, minmax(78px, 1fr))">
 				{#each [...WEEKDAYS, 'Woche'] as w (w)}<div class="wd">{w}</div>{/each}
 				{#each weeks as row, ri (ri)}
 					{#each row.days as d, di (di)}
@@ -218,15 +272,25 @@
 				<div class="value">{monthStats.byDir.long.trades} / {monthStats.byDir.short.trades}</div>
 				<div class="sub">{fmt(monthStats.byDir.long.pnl, true)} / {fmt(monthStats.byDir.short.pnl, true)}</div>
 			</div>
+			<div class="kpi kpi-now">
+				<div class="label">Futures-Konto · aktuell</div>
+				<div class="value">{live ? money(futEquity, 'USDT', { digits: 2 }) : '–'}</div>
+				<div class="sub">{live ? `verfügbar ${money(futAvailable, 'USDT', { digits: 0 })} · unrealisiert ${money(futUnrealized, 'USDT', { sign: true, digits: 0 })}` : liveError ? 'nicht abrufbar' : 'lade …'}</div>
+			</div>
 		</aside>
 	</div>
 
-	{#if monthStats.cumulative.length > 1}
-		<section class="card block">
+	<div class="grid-half block">
+		<section class="card">
 			<div class="card-title">Kumuliertes Ergebnis im Monat (netto)</div>
-			<LineChart labels={monthStats.cumulative.map((c) => c.day.slice(8) + '.')} values={monthStats.cumulative.map((c) => c.value.toNumber())} format={fmtN} />
+			{#if monthStats.cumulative.length > 1}
+				<LineChart labels={monthStats.cumulative.map((c) => c.day.slice(8) + '.')} values={monthStats.cumulative.map((c) => c.value.toNumber())} format={fmtN} height={340} />
+			{:else}
+				<p class="muted small">Zu wenige Handelstage in diesem Monat für einen Verlauf.</p>
+			{/if}
 		</section>
-	{/if}
+		{@render monthTable(calYearStats, `Monate ${calYear}`, month)}
+	</div>
 {:else}
 	<div class="kpis kpis-4">
 		<div class="kpi"><div class="label">Ergebnis netto · {rangeLabel}</div><div class="value {tone(stats.total.net)}">{fmt(stats.total.net, true)}</div><div class="sub">Trades brutto {fmt(stats.total.pnl, true)}</div></div>
@@ -239,55 +303,25 @@
 		<div class="kpi"><div class="label">Max. Rückgang</div><div class="value loss">{fmt(stats.maxDrawdown.neg())}</div><div class="sub">auf Tagesbasis, netto</div></div>
 	</div>
 
-	{#if stats.cumulative.length > 1}
-		<section class="card block">
-			<div class="card-title">Kumuliertes Ergebnis (netto)</div>
-			<LineChart labels={stats.cumulative.map((c) => c.day)} values={stats.cumulative.map((c) => c.value.toNumber())} format={fmtN} height={260} />
-		</section>
-	{/if}
-
-	<div class="grid-2 block">
+	<div class="grid-half block">
 		<section class="card">
-			<div class="card-title">Long vs. Short</div>
-			<table>
-				<thead><tr><th>Richtung</th><th class="num">Trades</th><th class="num">Anteil</th><th class="num">Treffer</th><th class="num">Ergebnis brutto</th></tr></thead>
-				<tbody>
-					{#each ['long', 'short'] as const as d (d)}
-						{@const x = stats.byDir[d]}
-						<tr>
-							<td>{d === 'long' ? 'Long' : 'Short'}</td>
-							<td class="num">{x.trades}</td>
-							<td class="num">{pct(stats.total.trades ? x.trades / stats.total.trades : null, 0)}</td>
-							<td class="num">{pct(x.trades ? x.wins / x.trades : null, 0)}</td>
-							<td class="num {tone(x.pnl)}">{fmt(x.pnl, true)}</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
+			<div class="card-title">Kumuliertes Ergebnis (netto) · {rangeLabel}</div>
+			{#if stats.cumulative.length > 1}
+				<LineChart labels={stats.cumulative.map((c) => c.day)} values={stats.cumulative.map((c) => c.value.toNumber())} format={fmtN} height={340} />
+			{:else}
+				<p class="muted small">Zu wenige Handelstage im Zeitraum für einen Verlauf.</p>
+			{/if}
 		</section>
-
 		{#if period !== 'monat'}
-			<section class="card">
-				<div class="card-title">Nach Monat</div>
-				<div class="table-wrap" style="max-height:260px;overflow-y:auto">
-					<table>
-						<thead><tr><th>Monat</th><th class="num">Trades</th><th class="num">Brutto</th><th class="num">Gebühren</th><th class="num">Funding</th><th class="num">Netto</th></tr></thead>
-						<tbody>
-							{#each [...stats.byMonth.entries()].reverse() as [m, b] (m)}
-								<tr>
-									<td><a href={`/futures?view=kalender&m=${m}&cur=${cur}`}>{m}</a></td>
-									<td class="num">{b.trades}</td>
-									<td class="num {tone(b.pnl)}">{fmt(b.pnl)}</td>
-									<td class="num">{fmt(b.fees)}</td>
-									<td class="num">{fmt(b.funding)}</td>
-									<td class="num {tone(b.net)}">{fmt(b.net, true)}</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
-			</section>
+			{@render monthTable(stats, 'Nach Monat', null)}
+		{:else}
+			{@render longShort()}
 		{/if}
+	</div>
+
+	<div class="grid-3 block">
+		{#if period !== 'monat'}{@render longShort()}{/if}
+
 
 		<section class="card">
 			<div class="card-title">Nach Wochentag (Trades, brutto)</div>
@@ -357,7 +391,29 @@
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) 260px;
 		gap: 16px;
-		align-items: start;
+		align-items: stretch;
+	}
+	.cal-layout > .card {
+		display: flex;
+		flex-direction: column;
+	}
+	.cal-layout .cal {
+		flex: 1;
+	}
+	.kpi-now {
+		background: color-mix(in srgb, var(--accent-soft) 70%, var(--surface));
+	}
+	.grid-3 {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+		gap: 16px;
+	}
+	.month-scroll {
+		max-height: 360px;
+		overflow-y: auto;
+	}
+	tr.current td {
+		background: var(--accent-soft);
 	}
 	.side-kpis {
 		grid-template-columns: 1fr;

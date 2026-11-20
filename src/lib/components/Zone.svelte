@@ -3,7 +3,7 @@
 
 	/**
 	 * Bereich einer Auswertungsseite.
-	 * now = true: „Jetzt“ – live, unabhängig vom Zeitraum, farbig abgesetzt, mit Zeitstempel.
+	 * now = true: „Aktueller Stand“ – beim Seitenaufruf bzw. „Aktualisieren“ abgefragt, unabhängig vom Zeitraum, farbig abgesetzt, mit Abrufzeit.
 	 * Sonst „Auswertung“: Zeitraum-Schalter gehören in tools, damit klar ist, wofür sie gelten.
 	 */
 	let {
@@ -18,9 +18,8 @@
 <section class="zone" class:zone-now={now}>
 	<div class="zone-head">
 		<div class="zone-title">
-			{#if now}<span class="live-dot" aria-hidden="true"></span>{/if}
 			{title}
-			{#if now}<span class="stamp small">{at ? `live · Stand ${new Date(at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : 'lade …'}</span>{/if}
+			{#if now}<span class="stamp small">{at ? `abgerufen um ${new Date(at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr` : 'lade …'}</span>{/if}
 		</div>
 		{#if tools}<div class="zone-tools">{@render tools()}</div>{/if}
 	</div>
