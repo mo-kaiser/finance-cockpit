@@ -2,7 +2,7 @@
 	import Decimal from 'decimal.js';
 	import LineChart from '#lib/components/LineChart.svelte';
 	import { buildPortfolio } from '#lib/analysis/portfolio.ts';
-	import { money, qty, tone } from '#lib/format.ts';
+	import { money, pct, qty, tone } from '#lib/format.ts';
 	import { USD_STABLE } from '#lib/tax/assets.ts';
 	import { computeTax, type Disposal } from '#lib/tax/engine.ts';
 	import { FxTable } from '#lib/tax/fx.ts';
@@ -126,18 +126,20 @@
 				<div class="card-title">Bestände Spot + Earn · EUR</div>
 				<div class="table-wrap scroll-now">
 					<table>
-						<thead><tr><th>Coin</th><th class="num">Menge</th><th class="num">Wert</th><th class="num">Einstand</th><th class="num">Unrealisiert</th></tr></thead>
+						<thead><tr><th>Coin</th><th class="num">Menge</th><th class="num">Kurs (USDT)</th><th class="num">Wert</th><th class="num">Anteil</th><th class="num">Einstand</th><th class="num">Unrealisiert</th></tr></thead>
 						<tbody>
 							{#each unrealizedRows as r (r.coin)}
 								<tr>
 									<td><strong>{r.coin}</strong></td>
 									<td class="num muted">{qty(r.qty, 6)}</td>
+									<td class="num">{r.price ? qty(r.price, r.price.lt(1) ? 6 : 2) : '–'}</td>
 									<td class="num">{money(r.valueEur)}</td>
+									<td class="num muted">{r.valueEur && !holdValue.isZero() ? pct(r.valueEur.div(holdValue).toNumber()) : ''}</td>
 									<td class="num" title={r.costNote ?? ''}>{r.costEur ? money(r.costEur) : '–'}</td>
 									<td class="num {tone(r.unrealizedEur)}">{r.unrealizedEur ? money(r.unrealizedEur, 'EUR', { sign: true }) : ''}</td>
 								</tr>
 							{:else}
-								<tr><td colspan="5" class="muted">{live ? 'Keine Bestände über 1 USDT.' : 'Lade Bestände …'}</td></tr>
+								<tr><td colspan="7" class="muted">{live ? 'Keine Bestände über 1 USDT.' : 'Lade Bestände …'}</td></tr>
 							{/each}
 						</tbody>
 					</table>

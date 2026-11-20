@@ -139,6 +139,8 @@
 								<th class="num">Menge</th>
 								<th class="num">Wert</th>
 								<th class="num">Zins p. a.</th>
+								<th class="num">Ertrag bisher</th>
+								<th>seit</th>
 								<th>bis</th>
 							</tr>
 						</thead>
@@ -146,10 +148,12 @@
 							{#each positions as p, i (i)}
 								<tr>
 									<td><strong>{p.coin}</strong>{#if broker === 'Alle'}<div class="note">{VNAME[p.venue]}</div>{/if}</td>
-									<td class="small" title={p.note ?? ''}>{p.product}{#if p.profit && !p.profit.isZero()}<div class="note">Ertrag bisher {qty(p.profit, 6)}</div>{/if}</td>
+									<td class="small">{p.product}{#if p.note}<div class="note">{p.note}</div>{/if}</td>
 									<td class="num">{qty(p.qty, 6)}</td>
 									<td class="num">{fmt(p.valueUsdt)}</td>
 									<td class="num">{p.apy !== null ? `${p.apy.toLocaleString('de-DE', { maximumFractionDigits: 2 })} %` : ''}</td>
+									<td class="num gain">{p.profit && !p.profit.isZero() ? `${qty(p.profit, 6)} ${p.coin}` : ''}</td>
+									<td class="small">{dateDe(p.start)}</td>
 									<td class="small">{p.end ? dateDe(p.end) : /flex/i.test(p.product) ? 'flexibel' : '–'}</td>
 								</tr>
 							{/each}
